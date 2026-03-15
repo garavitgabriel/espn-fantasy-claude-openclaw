@@ -1,0 +1,4 @@
+# MCP server dependencies (for Railway deployment)
+-e .
+mcp>=1.26.0
+python-dotenv>=1.0.0

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "espn-baseball": {
+      "command": "/Users/gabrielgaravit/Projects/espn-api/venv/bin/python",
+      "args": ["-m", "mcp_server.server"],
+      "cwd": "/Users/gabrielgaravit/Projects/espn-api"
+    }
+  }
+}
