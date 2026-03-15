@@ -25,11 +25,38 @@ mcp = FastMCP(
 from .tools import register_tools
 register_tools(mcp)
 
-if __name__ == "__main__":
+
+def run_server():
+    """Start the MCP server with the configured transport."""
     transport = os.environ.get("MCP_TRANSPORT", "stdio")
     if transport in ("sse", "streamable-http", "http"):
         host = os.environ.get("MCP_HOST", "0.0.0.0")
         port = int(os.environ.get("PORT", os.environ.get("MCP_PORT", "8000")))
-        mcp.run(transport=transport, host=host, port=port)
+
+        # For HTTP transports, add a /health endpoint for Railway healthchecks.
+        # The SSE endpoint (/sse) keeps connections open for streaming, which
+        # doesn't work well as a healthcheck target.
+        from starlette.applications import Starlette
+        from starlette.responses import PlainTextResponse
+        from starlette.routing import Route, Mount
+
+        def health(_request):
+            return PlainTextResponse("ok")
+
+        mcp_app = mcp.sse_app() if transport == "sse" else mcp.streamable_http_app()
+
+        app = Starlette(
+            routes=[
+                Route("/health", health),
+                Mount("/", app=mcp_app),
+            ],
+        )
+
+        import uvicorn
+        uvicorn.run(app, host=host, port=port)
     else:
         mcp.run(transport=transport)
+
+
+if __name__ == "__main__":
+    run_server()
