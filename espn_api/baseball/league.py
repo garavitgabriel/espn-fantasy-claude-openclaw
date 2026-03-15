@@ -57,6 +57,44 @@ class League(BaseLeague):
                     if matchup.home_team == opponent.team_id:
                         matchup.home_team = opponent
 
+    def refresh(self):
+        '''Gets latest league data. This can be used instead of creating a new League class each week'''
+        data = super()._fetch_league()
+        self.scoring_type = data['settings']['scoringSettings']['scoringType']
+        self._fetch_teams(data)
+        self._box_score_class = self._set_scoring_class(self.scoring_type)
+
+    def load_roster_week(self, week: int) -> None:
+        '''Sets Teams Roster for a Certain Week'''
+        params = {
+            'view': 'mRoster',
+            'scoringPeriodId': week
+        }
+        data = self.espn_request.league_get(params=params)
+
+        team_roster = {}
+        for team in data['teams']:
+            team_roster[team['id']] = team['roster']
+
+        for team in self.teams:
+            roster = team_roster[team.team_id]
+            team._fetch_roster(roster, self.year)
+
+    def player_info(self, name: str = None, playerId: Union[int, list] = None) -> Union[Player, List[Player]]:
+        '''Returns Player class if name found'''
+        if name:
+            playerId = self.player_map.get(name)
+        if playerId is None or isinstance(playerId, str):
+            return None
+        if not isinstance(playerId, list):
+            playerId = [playerId]
+
+        data = self.espn_request.get_player_card(playerId, self.finalScoringPeriod)
+        if len(data['players']) == 1:
+            return Player(data['players'][0], self.year)
+        if len(data['players']) > 1:
+            return [Player(player, self.year) for player in data['players']]
+
     def standings(self) -> List[Team]:
         standings = sorted(self.teams, key=lambda x: x.final_standing if x.final_standing != 0 else x.standing, reverse=False)
         return standings
