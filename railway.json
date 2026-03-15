@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python -m mcp_server.server",
+    "startCommand": "MCP_TRANSPORT=sse python -m mcp_server.server",
     "healthcheckPath": "/sse",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
