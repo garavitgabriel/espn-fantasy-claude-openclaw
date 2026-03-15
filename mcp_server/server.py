@@ -10,8 +10,12 @@ import os
 
 from mcp.server.fastmcp import FastMCP
 
-mcp = FastMCP(
-    "espn-baseball",
+# When deployed to a cloud host (e.g. Railway), the MCP SDK's DNS rebinding
+# protection rejects requests whose Host header isn't localhost.  Disable it
+# for network transports so external clients can connect.
+transport = os.environ.get("MCP_TRANSPORT", "stdio")
+_mcp_kwargs: dict = dict(
+    name="espn-baseball",
     instructions=(
         "ESPN Fantasy Baseball tools for league 'El Rey' (H2H Categories, Auction draft). "
         "Use these to scout opponents, find free agents, analyze matchups, "
@@ -21,6 +25,17 @@ mcp = FastMCP(
     ),
 )
 
+if transport in ("sse", "streamable-http", "http"):
+    try:
+        from mcp.server.auth.settings import TransportSecuritySettings
+    except ImportError:
+        from mcp.server.transport_security import TransportSecuritySettings  # type: ignore[no-redef]
+    _mcp_kwargs["transport_security"] = TransportSecuritySettings(
+        enable_dns_rebinding_protection=False,
+    )
+
+mcp = FastMCP(**_mcp_kwargs)
+
 # Register all tools
 from .tools import register_tools
 register_tools(mcp)
@@ -28,7 +43,6 @@ register_tools(mcp)
 
 def run_server():
     """Start the MCP server with the configured transport."""
-    transport = os.environ.get("MCP_TRANSPORT", "stdio")
     if transport in ("sse", "streamable-http", "http"):
         host = os.environ.get("MCP_HOST", "0.0.0.0")
         port = int(os.environ.get("PORT", os.environ.get("MCP_PORT", "8000")))
