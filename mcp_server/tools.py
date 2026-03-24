@@ -2,7 +2,7 @@
 
 from mcp.server.fastmcp import FastMCP
 
-from .config import get_league, get_my_team
+from .config import get_league, get_my_team, get_my_team_error, resolve_team, describe_available_teams
 from . import formatters
 
 
@@ -15,7 +15,7 @@ def register_tools(mcp: FastMCP):
         league = get_league()
         team = get_my_team(league)
         if not team:
-            return "Could not find your team. Check ESPN_TEAM_NAME."
+            return get_my_team_error(league)
         return formatters.fmt_roster(team)
 
     @mcp.tool()
@@ -26,12 +26,10 @@ def register_tools(mcp: FastMCP):
             team_name: Full or partial team name to search for
         """
         league = get_league()
-        name_lower = team_name.lower()
-        for team in league.teams:
-            if name_lower in team.team_name.lower():
-                return formatters.fmt_roster(team)
-        available = ", ".join(t.team_name for t in league.teams)
-        return f"Team '{team_name}' not found. Available teams: {available}"
+        team = resolve_team(league, team_name)
+        if team:
+            return formatters.fmt_roster(team)
+        return f"Team '{team_name}' not found. Available teams: {describe_available_teams(league)}"
 
     @mcp.tool()
     def get_matchup(week: int = 0) -> str:
@@ -43,7 +41,7 @@ def register_tools(mcp: FastMCP):
         league = get_league()
         my_team = get_my_team(league)
         if not my_team:
-            return "Could not find your team."
+            return get_my_team_error(league)
 
         matchup_period = week if week > 0 else None
         try:
@@ -219,7 +217,9 @@ def register_tools(mcp: FastMCP):
         result = formatters.fmt_draft_board(league.draft, league.teams, draft_settings)
         # Append roster needs for my team
         my_team = get_my_team(league)
-        if my_team and league.draft:
+        if not my_team:
+            result += "\n\n---\n\n" + get_my_team_error(league)
+        elif league.draft:
             result += "\n\n---\n\n" + formatters.fmt_roster_needs(my_team, slot_counts)
         return result
 
@@ -232,7 +232,7 @@ def register_tools(mcp: FastMCP):
         league = get_league()
         my_team = get_my_team(league)
         if not my_team:
-            return "Could not find your team. Check ESPN_TEAM_NAME."
+            return get_my_team_error(league)
         data = league.espn_request.get_league()
         slot_counts = data['settings'].get('rosterSettings', {}).get('lineupSlotCounts', {})
         return formatters.fmt_roster_needs(my_team, slot_counts)
