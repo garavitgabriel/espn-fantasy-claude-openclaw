@@ -2,21 +2,66 @@ from .constant import POSITION_MAP, PRO_TEAM_MAP, STATS_MAP
 from .utils import json_parsing
 import pdb
 
+
+JUNK_DISPLAY_POSITIONS = {'BE', 'IL', 'UTIL', 'IF'}
+DISPLAY_POSITION_PRIORITY = ['C', '1B', '2B', '3B', 'SS', 'OF', 'DH', 'LF', 'CF', 'RF', '2B/SS', '1B/3B', 'P']
+
+
+def _extract_player_data(data):
+    return data.get('playerPoolEntry', {}).get('player') or data.get('player') or data
+
+
+def _map_default_position(default_position_id):
+    if default_position_id is None:
+        return ''
+    return POSITION_MAP.get(default_position_id - 1, default_position_id - 1)
+
+
+def _map_eligible_slots(eligible_slots):
+    return [POSITION_MAP.get(slot_id, slot_id) for slot_id in eligible_slots]
+
+
+def _display_position(default_position_id, eligible_slots):
+    mapped_slots = _map_eligible_slots(eligible_slots)
+    useful_slots = [slot for slot in mapped_slots if slot not in JUNK_DISPLAY_POSITIONS]
+
+    if 'SP' in useful_slots and 'RP' in useful_slots:
+        return 'SP/RP'
+    if 'SP' in useful_slots:
+        return 'SP'
+    if 'RP' in useful_slots:
+        return 'RP'
+
+    for position in DISPLAY_POSITION_PRIORITY:
+        if position in useful_slots:
+            return position
+
+    default_position = _map_default_position(default_position_id)
+    if default_position and default_position not in JUNK_DISPLAY_POSITIONS:
+        return default_position
+
+    if useful_slots:
+        return useful_slots[0]
+    return default_position
+
+
 class Player(object):
     '''Player are part of team'''
     def __init__(self, data, year):
-        self.name = json_parsing(data, 'fullName')
-        self.playerId = json_parsing(data, 'id')
-        self.position = POSITION_MAP.get(json_parsing(data, 'defaultPositionId') - 1, json_parsing(data, 'defaultPositionId') - 1)
+        player = _extract_player_data(data)
+
+        self.name = player.get('fullName', json_parsing(data, 'fullName'))
+        self.playerId = player.get('id', json_parsing(data, 'id'))
+        self.position = _display_position(player.get('defaultPositionId'), player.get('eligibleSlots', []))
         self.lineupSlot = POSITION_MAP.get(data.get('lineupSlotId'), '')
-        self.eligibleSlots = [POSITION_MAP.get(pos, pos) for pos in json_parsing(data, 'eligibleSlots')]  # if position isn't in position map, just use the position id number
+        self.eligibleSlots = _map_eligible_slots(player.get('eligibleSlots', []))  # if position isn't in position map, just use the position id number
         self.acquisitionType = json_parsing(data, 'acquisitionType')
-        self.proTeam = PRO_TEAM_MAP.get(json_parsing(data, 'proTeamId'), json_parsing(data, 'proTeamId'))
-        self.injuryStatus = json_parsing(data, 'injuryStatus')
-        self.status = json_parsing(data, 'status')
+        pro_team_id = player.get('proTeamId', json_parsing(data, 'proTeamId'))
+        self.proTeam = PRO_TEAM_MAP.get(pro_team_id, pro_team_id)
+        self.injuryStatus = player.get('injuryStatus', json_parsing(data, 'injuryStatus'))
+        self.status = data.get('status', player.get('status', json_parsing(data, 'status')))
         self.stats = {}
 
-        player = data.get('playerPoolEntry', {}).get('player') or data['player']
         self.injuryStatus = player.get('injuryStatus', self.injuryStatus)
         self.injured = player.get('injured', False)
         self.percent_owned = round(player.get('ownership', {}).get('percentOwned', -1), 2)
