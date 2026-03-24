@@ -11,7 +11,7 @@ from .player import Player
 from .matchup import Matchup
 from .box_score import BoxScore, H2HCategoryBoxScore, H2HPointsBoxScore
 from.activity import Activity
-from .constant import POSITION_MAP, ACTIVITY_MAP
+from .constant import ACTIVITY_MAP, get_position_filter_slot_ids
 
 class League(BaseLeague):
     '''Creates a League instance for Public/Private ESPN league'''
@@ -150,10 +150,13 @@ class League(BaseLeague):
             week = self.current_week
 
         slot_filter = []
-        if position and position in POSITION_MAP:
-            slot_filter = [POSITION_MAP[position]]
+        if position:
+            slot_filter.extend(get_position_filter_slot_ids(position))
         if position_id:
             slot_filter.append(position_id)
+
+        if slot_filter:
+            slot_filter = list(dict.fromkeys(slot_filter))
 
 
         params = {
