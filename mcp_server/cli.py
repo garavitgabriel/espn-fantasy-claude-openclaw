@@ -3,7 +3,13 @@
 import argparse
 import sys
 
-from .config import get_league, get_my_team
+from .config import (
+    describe_available_teams,
+    get_league,
+    get_my_team,
+    get_my_team_error,
+    resolve_team,
+)
 from . import formatters
 
 
@@ -11,25 +17,23 @@ def cmd_roster(args):
     league = get_league()
     team = get_my_team(league)
     if not team:
-        return "Could not find your team. Check ESPN_TEAM_NAME."
+        return get_my_team_error(league)
     return formatters.fmt_roster(team)
 
 
 def cmd_team_roster(args):
     league = get_league()
-    name_lower = args.team_name.lower()
-    for team in league.teams:
-        if name_lower in team.team_name.lower():
-            return formatters.fmt_roster(team)
-    available = ", ".join(t.team_name for t in league.teams)
-    return f"Team '{args.team_name}' not found. Available teams: {available}"
+    team = resolve_team(league, args.team_name)
+    if team:
+        return formatters.fmt_roster(team)
+    return f"Team '{args.team_name}' not found. Available teams: {describe_available_teams(league)}"
 
 
 def cmd_matchup(args):
     league = get_league()
     my_team = get_my_team(league)
     if not my_team:
-        return "Could not find your team."
+        return get_my_team_error(league)
     matchup_period = args.week if args.week > 0 else None
     try:
         box_scores = league.box_scores(matchup_period=matchup_period)
@@ -150,7 +154,9 @@ def cmd_draft(args):
     slot_counts = data['settings'].get('rosterSettings', {}).get('lineupSlotCounts', {})
     result = formatters.fmt_draft_board(league.draft, league.teams, draft_settings)
     my_team = get_my_team(league)
-    if my_team and league.draft:
+    if not my_team:
+        result += "\n\n---\n\n" + get_my_team_error(league)
+    elif league.draft:
         result += "\n\n---\n\n" + formatters.fmt_roster_needs(my_team, slot_counts)
     return result
 
@@ -159,7 +165,7 @@ def cmd_needs(args):
     league = get_league()
     my_team = get_my_team(league)
     if not my_team:
-        return "Could not find your team. Check ESPN_TEAM_NAME."
+        return get_my_team_error(league)
     data = league.espn_request.get_league()
     slot_counts = data['settings'].get('rosterSettings', {}).get('lineupSlotCounts', {})
     return formatters.fmt_roster_needs(my_team, slot_counts)

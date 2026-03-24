@@ -36,8 +36,11 @@ ESPN_S2=your_espn_s2_cookie
 ESPN_SWID={your_swid}
 ESPN_LEAGUE_ID=612122596
 ESPN_YEAR=2026
+ESPN_TEAM_ID=
 ESPN_TEAM_NAME=Gabriel
 ```
+
+`ESPN_TEAM_ID` is the highest-priority resolver for tools that operate on "my team" and is the most reliable option. If `ESPN_TEAM_ID` is unset, the server falls back to `ESPN_TEAM_NAME` using normalized matching in this order: exact team-name match, partial team-name match, exact owner-name match, then partial owner-name match.
 
 To find your `ESPN_S2` and `ESPN_SWID` cookies, log in to ESPN Fantasy, open browser DevTools > Application > Cookies, and copy the values.
 
@@ -80,7 +83,7 @@ python -m mcp_server
 | Command | Args | Description |
 |---------|------|-------------|
 | `roster` | — | Show my team's roster |
-| `team-roster` | `TEAM_NAME` | Show any team's roster (partial match) |
+| `team-roster` | `TEAM_NAME` | Show any team's roster (normalized exact match first, then partial) |
 | `matchup` | `--week N` | My current matchup (category breakdown) |
 | `standings` | — | League standings by rank |
 | `free-agents` | `--position POS --size N` | Best available free agents |
@@ -184,6 +187,7 @@ ESPN_S2=your_espn_s2_cookie
 ESPN_SWID={your_swid}
 ESPN_LEAGUE_ID=612122596
 ESPN_YEAR=2026
+ESPN_TEAM_ID=
 ESPN_TEAM_NAME=Gabriel
 MCP_TRANSPORT=sse
 ```
