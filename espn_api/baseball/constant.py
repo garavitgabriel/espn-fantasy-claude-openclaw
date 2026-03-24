@@ -22,6 +22,32 @@ POSITION_MAP = {
     # 18, 21, 22 have appeared but unknown what position they correspond to
 }
 
+POSITION_ALIASES = {
+    'UT': 'UTIL',
+}
+
+
+def normalize_position_label(position):
+    if position is None:
+        return None
+
+    normalized = str(position).strip().upper()
+    if not normalized:
+        return None
+
+    return POSITION_ALIASES.get(normalized, normalized)
+
+
+def get_position_filter_slot_ids(position):
+    normalized = normalize_position_label(position)
+    if not normalized:
+        return []
+
+    return [
+        slot_id for slot_id, label in POSITION_MAP.items()
+        if label.upper() == normalized
+    ]
+
 PRO_TEAM_MAP = {
     0: 'FA',
     1: 'Bal',
