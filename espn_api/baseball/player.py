@@ -1,6 +1,5 @@
-from .constant import POSITION_MAP, PRO_TEAM_MAP, STATS_MAP
+from .constant import DEFAULT_POSITION_MAP, POSITION_MAP, PRO_TEAM_MAP, STATS_MAP
 from .utils import json_parsing
-import pdb
 
 
 JUNK_DISPLAY_POSITIONS = {'BE', 'IL', 'UTIL', 'IF'}
