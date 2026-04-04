@@ -6,6 +6,11 @@
 git clone https://github.com/garavitgabriel/espn-api.git
 cd espn-api
 uv sync --group dev
+
+# Authenticate (pick one)
+uv sync --extra browser && uv run playwright install chromium
+uv run espn auth login          # browser login — easiest
+# or: uv run espn auth token <ESPN_S2> <ESPN_SWID>
 ```
 
 ## Running Tests

@@ -37,19 +37,29 @@ openclaw plugins install ~/Desktop/espn-fantasy-openclaw-plugin.zip
 
 ## Authentication
 
-ESPN requires cookies for API access. Get them from your browser:
+ESPN requires cookies (`espn_s2` and `SWID`) for API access. Three ways to set them:
 
-1. Log in to [ESPN Fantasy](https://fantasy.espn.com)
-2. Open DevTools > Application > Cookies
-3. Copy the values of `espn_s2` and `SWID`
-
-Then set them:
+**Option A — Browser login (easiest):**
 
 ```bash
-# If installed locally:
-uv run espn auth token <ESPN_S2> <ESPN_SWID>
+uv sync --extra browser              # first time only
+uv run playwright install chromium   # first time only
+uv run espn auth login
+```
 
-# On headless servers, use environment variables:
+A browser opens, you log in to ESPN, and cookies are captured automatically.
+
+**Option B — Manual token:**
+
+Get cookies from [ESPN Fantasy](https://fantasy.espn.com) > DevTools > Application > Cookies, then:
+
+```bash
+uv run espn auth token <ESPN_S2> <ESPN_SWID>
+```
+
+**Option C — Environment variables (headless servers):**
+
+```bash
 export ESPN_S2="your_espn_s2_cookie"
 export ESPN_SWID="{your_swid}"
 ```
