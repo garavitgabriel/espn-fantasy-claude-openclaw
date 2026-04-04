@@ -24,6 +24,32 @@ Turn your H2H Categories league into a conversation. Scout opponents, find free 
 - **Budget strategy** — Stars-and-scrubs vs balanced, position scarcity alerts (C, SS), nomination targets
 - **Bid guidance** — For each nominated player: max bid, walk-away price, and alternative targets if you lose
 
+### Automated Monitoring (Scheduled Agents)
+
+Set up Claude to monitor your league on autopilot using [scheduled agents](https://docs.anthropic.com/en/docs/claude-code/scheduled-agents):
+
+```bash
+# Morning lineup check — runs daily at 8am
+claude schedule create \
+  --name "espn-lineup-check" \
+  --schedule "0 8 * * *" \
+  --prompt "Check my roster for injured players, empty slots, or anyone on the bench who should be starting. Flag any issues."
+
+# Waiver wire scout — runs every 6 hours
+claude schedule create \
+  --name "espn-waiver-scout" \
+  --schedule "0 */6 * * *" \
+  --prompt "Check recent league activity for dropped players worth picking up. Cross-reference with my roster needs and weak categories. Only alert me if there's a clear upgrade available."
+
+# Weekly matchup prep — runs Monday mornings
+claude schedule create \
+  --name "espn-weekly-prep" \
+  --schedule "0 9 * * 1" \
+  --prompt "Run a full weekly prep: scout my opponent, identify swing categories, check for streaming pitchers, and give me a game plan for the week."
+```
+
+These run automatically and push notifications when something needs your attention — an injured starter, a valuable player dropped, or a close category you could flip with a streaming pickup.
+
 ### Cross-Session Memory
 
 The plugin remembers your season across conversations:
