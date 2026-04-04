@@ -1,8 +1,74 @@
-# ESPN Fantasy Baseball — MCP Plugin for Claude
+# ESPN Fantasy Baseball — AI-Powered League Manager
 
-A Python toolkit for ESPN Fantasy Baseball built on [cwendt94/espn-api](https://github.com/cwendt94/espn-api). Includes an **MCP server** (16 tools + 5 resources), a **Typer CLI**, **8 skills**, a **memory system**, and a **Claude Code plugin** — all for H2H Categories league management.
+Turn your H2H Categories league into a conversation. Scout opponents, find free agents, analyze trades, run your auction draft, and track your season — all through Claude.
 
-Works with **Claude Code**, **Claude Desktop**, **Claude Cowork**, and **OpenClaw**.
+> "Who should I pick up at SS this week?"
+>
+> Claude checks your roster, identifies your weak categories, searches free agents at SS, compares them against your current player, and recommends a pickup that flips two categories in your matchup.
+
+## What You Can Do
+
+### Weekly Management
+- **Matchup scouting** — See your H2H category breakdown, identify swing categories, and get lineup recommendations to flip close ones
+- **Free agent search** — Find pickups filtered by position, ranked by category impact (not generic points)
+- **Waiver wire alerts** — Monitor league transactions, spot dropped players worth claiming
+- **Weekly prep** — Full Monday briefing: matchup preview, injury report, start/sit decisions, streaming targets
+
+### Trades & Strategy
+- **Trade analysis** — Evaluate any trade with a category-by-category impact table and a clear accept/decline verdict
+- **Category strategy** — Map your strengths and weaknesses across all 14 categories, decide what to punt, and build a path to 8+ category wins per week
+- **Season outlook** — Big-picture analysis: win/loss trajectory, playoff positioning, roster improvement plan
+
+### Auction Draft ($280 budget)
+- **Live draft board** — Track every pick, price paid, and remaining budgets across all teams
+- **Budget strategy** — Stars-and-scrubs vs balanced, position scarcity alerts (C, SS), nomination targets
+- **Bid guidance** — For each nominated player: max bid, walk-away price, and alternative targets if you lose
+
+### Cross-Session Memory
+
+The plugin remembers your season across conversations:
+
+| What it remembers | Why it matters |
+|---|---|
+| **Matchup history** | Win/loss record per opponent, category breakdowns by week |
+| **Category trends** | Which stats you're dominant/weak/improving in over time |
+| **Roster moves** | Every add, drop, and trade — avoids re-adding players you already tried |
+| **Watchlist** | Players you're tracking for future pickup |
+| **Draft picks** | Full auction history with bid amounts |
+| **Preferences** | Your punt strategy, draft approach, and other strategic decisions |
+
+Memory is powered by a local SQLite database (`~/.espn-fantasy/memory.db`) with 14 MCP tools across 7 tables. At the start of each session, the agent loads your full context — matchup history, category trends, roster moves, and preferences — so it picks up where you left off.
+
+## How It Works
+
+Two MCP servers working together:
+
+**ESPN Fantasy MCP** (16 tools + 5 resources) — Connects to ESPN's API for live league data: rosters, standings, matchups, free agents, player stats, trades, draft board, and scoring categories. Deployed on Railway via SSE or runs locally via stdio.
+
+**Memory MCP** (14 tools) — Local SQLite server that persists matchup results, roster moves, category assessments, watchlist, draft picks, and user preferences across sessions. Runs locally via stdio.
+
+**8 Skills** orchestrate both servers into complete workflows. When you ask "How's my matchup this week?", the matchup-scout skill calls `get_standings` → `get_matchup` → `get_team_roster` (opponent) → `get_my_roster` → loads memory for historical context → produces a category scoreboard with recommendations.
+
+### The 14 Scoring Categories
+
+The league uses **H2H Categories** — you win individual stat categories each week, not total points. This shapes every recommendation:
+
+| Hitting (7) | Pitching (7) |
+|---|---|
+| AVG | WHIP *(lower wins)* |
+| HR | ERA *(lower wins)* |
+| OPS | K (strikeouts) |
+| R (runs) | W (wins) |
+| RBI | L *(lower wins)* |
+| SB (stolen bases) | SV (saves) |
+| B_SO *(lower wins)* | HLD (holds) |
+
+## Built On
+
+- [**cwendt94/espn-api**](https://github.com/cwendt94/espn-api) — Python library for ESPN's Fantasy API (rosters, standings, matchups, player data). This repo is a fork with the MCP server, CLI, and plugin layered on top.
+- [**kalil0321/reverse-api-engineer**](https://github.com/kalil0321/reverse-api-engineer) — Captures ESPN browser traffic to discover undocumented API endpoints beyond what espn-api covers. Used to map additional league data and build more powerful tooling.
+
+---
 
 ## Quick Start
 
@@ -72,6 +138,23 @@ cp .env.example .env   # edit with your values
 File location: `~/Library/Application Support/Claude/claude_desktop_config.json`
 </details>
 
+---
+
+## Skills
+
+Each skill orchestrates multiple MCP tools into a complete workflow:
+
+| Skill | Triggers | What it does |
+|---|---|---|
+| **matchup-scout** | "matchup", "how am I doing", "opponent" | Category scoreboard, opponent scouting, press/protect/concede recommendations |
+| **free-agent-finder** | "free agent", "pickup", "waiver" | Position-filtered search ranked by category impact, pickup/drop verdicts |
+| **trade-analyzer** | "trade", "should I accept", "give X for Y" | Category-by-category impact table, net swing analysis, accept/decline verdict |
+| **draft-assistant** | "draft", "auction", "bid", "budget" | Live draft board tracking, bid guidance, budget pacing, position scarcity alerts |
+| **weekly-prep** | "weekly prep", "set my lineup", "Monday briefing" | Matchup preview, injury scan, start/sit, streaming targets, week plan |
+| **category-strategist** | "category analysis", "what should I punt" | Rate all 14 categories, identify punt targets, build path to 8+ wins |
+| **waiver-wire-scout** | "who got dropped", "league activity" | Monitor transactions, spot opportunities, avoid re-adding failed pickups |
+| **season-outlook** | "season outlook", "playoff chances" | Win/loss trajectory, category trends, playoff math, improvement plan |
+
 ## CLI
 
 ```bash
@@ -105,7 +188,7 @@ uv run espn --help
 ## MCP Tools (16)
 
 <details>
-<summary>Full tool reference</summary>
+<summary>ESPN Fantasy MCP — live league data</summary>
 
 | Tool | Description |
 |---|---|
@@ -127,7 +210,29 @@ uv run espn --help
 | `refresh_data` | Pull latest data from ESPN |
 </details>
 
-## MCP Resources (5)
+<details>
+<summary>Memory MCP — cross-session persistence (14 tools)</summary>
+
+| Tool | Description |
+|---|---|
+| `get_full_context` | Load all saved data at session start (matchups, trends, moves, watchlist, preferences) |
+| `save_matchup_result` | Record weekly W/L with category breakdown |
+| `get_matchup_history` | Query past matchups by opponent, season, or week |
+| `save_roster_move` | Log adds, drops, trades with notes |
+| `get_roster_moves` | Query transaction history |
+| `add_to_watchlist` | Track a player for future pickup |
+| `remove_from_watchlist` | Stop tracking a player |
+| `get_watchlist` | View all tracked players |
+| `save_category_trend` | Record category strength (STRONG/AVERAGE/WEAK) per week |
+| `get_category_trends` | View category assessments over time |
+| `save_draft_pick` | Record auction pick with bid amount |
+| `get_draft_picks` | View draft history |
+| `set_preference` | Store strategy decisions (punt categories, draft approach) |
+| `get_preferences` | Retrieve saved preferences |
+</details>
+
+<details>
+<summary>MCP Resources (5)</summary>
 
 | Resource URI | Description |
 |---|---|
@@ -136,63 +241,9 @@ uv run espn --help
 | `espn://info/league-settings` | H2H Categories format, scoring, roster config |
 | `espn://skill/matchup-scout` | Matchup analysis workflow |
 | `espn://skill/free-agent-finder` | Free agent search workflow |
+</details>
 
-## Skills (8)
-
-| Skill | Description |
-|---|---|
-| `matchup-scout` | Analyze your H2H matchup and find advantages |
-| `free-agent-finder` | Find the best available players for your needs |
-| `trade-analyzer` | Evaluate trade proposals with category impact |
-| `draft-assistant` | Auction draft guidance and budget strategy |
-| `weekly-prep` | Full weekly preparation workflow |
-| `category-strategist` | Optimize your category standings |
-| `waiver-wire-scout` | Monitor league activity for opportunities |
-| `season-outlook` | Big-picture season analysis and trends |
-
-## Project Structure
-
-```
-espn-api/
-├── .claude-plugin/        # Plugin manifest (auto-discovered by Claude Code)
-├── .mcp.json              # MCP server registration (uv run)
-├── skills/                # 8 agent-invoked skills
-├── commands/              # 5 user-invoked slash commands
-├── agents/                # fantasy-advisor agent
-├── memory/                # SQLite memory MCP server (cross-session)
-├── espn_api/              # Upstream ESPN Fantasy API library
-├── mcp_server/            # MCP server + CLI
-│   ├── server.py          # FastMCP server (16 tools + 5 resources)
-│   ├── tools.py           # Tool definitions
-│   ├── resources.py       # MCP resource definitions
-│   ├── formatters.py      # Shared markdown table formatters
-│   ├── config.py          # League connection & config
-│   ├── auth.py            # ConfigManager + credential storage
-│   └── cli/               # Typer CLI
-│       ├── __init__.py    # 16 league commands
-│       ├── auth.py        # token, status, logout
-│       └── build_plugin.py # Plugin bundle builder
-├── tests/                 # Test suite
-├── pyproject.toml         # uv/hatchling package config
-├── Dockerfile             # Production container
-└── install-openclaw.sh    # OpenClaw one-command installer
-```
-
-## Transports
-
-| Transport | Use Case | Default Port |
-|---|---|---|
-| `stdio` | Local — Claude Code, Desktop, IDE plugins (default) | N/A |
-| `sse` | Remote — Railway, Cowork, any HTTP client | 8000 |
-| `streamable-http` | Remote — newer MCP clients | 8000 |
-
-```bash
-# Local (default)
-uv run espn-mcp
-
-# Remote
-MCP_TRANSPORT=sse uv run espn-mcp
-```
+---
 
 ## Deploy to Railway
 
@@ -250,6 +301,36 @@ Use the SSE URL in Claude Desktop, Cowork, or any MCP client:
 
 > **Note**: The `startCommand` in `railway.json` is critical. Railway's Dockerfile builder may ignore the `CMD` instruction and use a dashboard-configured command instead. The explicit `startCommand` ensures the venv Python (with all dependencies) is always used.
 
+---
+
+## Architecture
+
+```
+espn-api/
+├── .claude-plugin/        # Plugin manifest (auto-discovered by Claude Code)
+├── .mcp.json              # MCP server registration (uv run)
+├── skills/                # 8 agent-invoked skills
+├── commands/              # 5 user-invoked slash commands
+├── agents/                # fantasy-advisor agent (H2H Categories expert)
+├── memory/                # SQLite memory MCP server (14 tools, 7 tables)
+│   ├── server.py          # FastMCP server with 14 memory tools
+│   ├── db.py              # Schema + connection management
+│   └── repos.py           # Repository pattern for each table
+├── espn_api/              # Upstream ESPN Fantasy API library
+├── mcp_server/            # ESPN MCP server + CLI
+│   ├── server.py          # FastMCP server (16 tools + 5 resources)
+│   ├── tools.py           # Tool definitions
+│   ├── resources.py       # MCP resource definitions (workflow playbooks)
+│   ├── formatters.py      # Shared markdown formatters (14 fmt_* functions)
+│   ├── config.py          # League singleton + credential loading
+│   ├── auth.py            # ConfigManager (~/.espn-fantasy/config.json)
+│   ├── browser_auth.py    # Playwright-based ESPN login
+│   └── cli/               # Typer CLI (18 commands)
+├── pyproject.toml         # uv/hatchling package config
+├── Dockerfile             # Production container (Railway-ready)
+└── install-openclaw.sh    # OpenClaw one-command installer
+```
+
 ## Development
 
 ```bash
@@ -259,10 +340,6 @@ uv run espn --help
 uv run espn-mcp  # Start MCP server locally
 ```
 
-## Upstream API
-
-For documentation on the underlying `espn_api` library, see the [upstream wiki](https://github.com/cwendt94/espn-api/wiki).
-
 ## License
 
-Based on [cwendt94/espn-api](https://github.com/cwendt94/espn-api). See upstream repository for license details.
+Built on [cwendt94/espn-api](https://github.com/cwendt94/espn-api). See upstream repository for license details.
