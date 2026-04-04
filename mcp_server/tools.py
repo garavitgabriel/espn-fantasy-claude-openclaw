@@ -7,6 +7,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .config import get_league, get_my_team, get_my_team_error, resolve_team, describe_available_teams
 from . import formatters
+from . import espn_public_api
 
 logger = logging.getLogger(__name__)
 
@@ -412,3 +413,94 @@ def register_tools(mcp: FastMCP):
             lines.append(f"| {away_name} | {a_score} | {home_name} | {h_score} | {winner_name} |")
 
         return "\n".join(lines)
+
+    # ------------------------------------------------------------------
+    # Phase C — New tools from discovered ESPN public APIs
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def get_player_news(player_name: str) -> str:
+        """Get latest news, injury status, and next game for a player.
+
+        Uses ESPN's public player profile API. Returns rotowire injury blurbs,
+        recent headlines, and the player's next scheduled game.
+
+        Args:
+            player_name: Player's full name (e.g. "Shohei Ohtani")
+        """
+        league = get_league()
+        athlete_id = espn_public_api.resolve_athlete_id(league, player_name)
+        if not athlete_id:
+            return f"Could not find ESPN athlete ID for '{player_name}'. Try the exact ESPN name."
+        try:
+            data = espn_public_api.get_player_overview(athlete_id)
+            return formatters.fmt_player_news(data, player_name)
+        except Exception as e:
+            return f"Failed to fetch news for '{player_name}': {e}"
+
+    @mcp.tool()
+    def get_player_splits(player_name: str, season: int = 0) -> str:
+        """Get player splits: vs LHP/RHP, home/away, by month, by count, etc.
+
+        Shows 9 categories of splits with detailed batting/pitching stats.
+        Critical for evaluating platoon players and matchup-dependent value.
+
+        Args:
+            player_name: Player's full name
+            season: Season year (0 = current)
+        """
+        league = get_league()
+        athlete_id = espn_public_api.resolve_athlete_id(league, player_name)
+        if not athlete_id:
+            return f"Could not find ESPN athlete ID for '{player_name}'. Try the exact ESPN name."
+        try:
+            data = espn_public_api.get_player_splits(
+                athlete_id,
+                season=season if season > 0 else None,
+            )
+            return formatters.fmt_player_splits(data, player_name)
+        except Exception as e:
+            return f"Failed to fetch splits for '{player_name}': {e}"
+
+    @mcp.tool()
+    def get_player_gamelog(player_name: str, category: str = "") -> str:
+        """Get a player's game-by-game stats for the current season.
+
+        Shows the last 20 games with full stat lines. Use this to identify
+        hot/cold streaks, recent form, and matchup-specific performance.
+
+        Args:
+            player_name: Player's full name
+            category: Filter by "batting" or "pitching" (empty = all)
+        """
+        league = get_league()
+        athlete_id = espn_public_api.resolve_athlete_id(league, player_name)
+        if not athlete_id:
+            return f"Could not find ESPN athlete ID for '{player_name}'. Try the exact ESPN name."
+        try:
+            data = espn_public_api.get_player_gamelog(
+                athlete_id,
+                category=category if category else None,
+            )
+            return formatters.fmt_player_gamelog(data, player_name)
+        except Exception as e:
+            return f"Failed to fetch game log for '{player_name}': {e}"
+
+    @mcp.tool()
+    def get_mlb_games(date: str = "") -> str:
+        """Get today's MLB games with scores and status.
+
+        Shows all games for a given date — useful for checking which teams
+        are playing (streaming pitchers, bench off-day players).
+
+        Args:
+            date: Date in YYYYMMDD format (empty = today)
+        """
+        if not date:
+            from datetime import datetime
+            date = datetime.now().strftime("%Y%m%d")
+        try:
+            data = espn_public_api.get_mlb_games(date)
+            return formatters.fmt_mlb_games(data, date)
+        except Exception as e:
+            return f"Failed to fetch MLB games for {date}: {e}"

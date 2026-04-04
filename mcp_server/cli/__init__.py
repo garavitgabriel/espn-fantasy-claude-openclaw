@@ -375,5 +375,90 @@ def scoreboard(
     console.print("\n".join(lines))
 
 
+# ---------------------------------------------------------------------------
+# Phase C — ESPN public API commands
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def news(
+    name: str = typer.Argument(..., help="Player's full name"),
+) -> None:
+    """Get latest news, injury status, and next game for a player."""
+    from mcp_server import espn_public_api
+
+    league = get_league()
+    athlete_id = espn_public_api.resolve_athlete_id(league, name)
+    if not athlete_id:
+        console.print(f"Could not find ESPN athlete ID for '{name}'.")
+        raise typer.Exit(1)
+    try:
+        data = espn_public_api.get_player_overview(athlete_id)
+        console.print(formatters.fmt_player_news(data, name))
+    except Exception as e:
+        console.print(f"Failed to fetch news: {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def splits(
+    name: str = typer.Argument(..., help="Player's full name"),
+    season: int = typer.Option(0, "--season", "-s", help="Season year (0=current)"),
+) -> None:
+    """Get player splits: vs LHP/RHP, home/away, by month, etc."""
+    from mcp_server import espn_public_api
+
+    league = get_league()
+    athlete_id = espn_public_api.resolve_athlete_id(league, name)
+    if not athlete_id:
+        console.print(f"Could not find ESPN athlete ID for '{name}'.")
+        raise typer.Exit(1)
+    try:
+        data = espn_public_api.get_player_splits(athlete_id, season=season if season > 0 else None)
+        console.print(formatters.fmt_player_splits(data, name))
+    except Exception as e:
+        console.print(f"Failed to fetch splits: {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def gamelog(
+    name: str = typer.Argument(..., help="Player's full name"),
+    category: str = typer.Option("", "--category", "-c", help="batting or pitching"),
+) -> None:
+    """Get a player's game-by-game stats (last 20 games)."""
+    from mcp_server import espn_public_api
+
+    league = get_league()
+    athlete_id = espn_public_api.resolve_athlete_id(league, name)
+    if not athlete_id:
+        console.print(f"Could not find ESPN athlete ID for '{name}'.")
+        raise typer.Exit(1)
+    try:
+        data = espn_public_api.get_player_gamelog(athlete_id, category=category if category else None)
+        console.print(formatters.fmt_player_gamelog(data, name))
+    except Exception as e:
+        console.print(f"Failed to fetch game log: {e}")
+        raise typer.Exit(1)
+
+
+@app.command(name="mlb-games")
+def mlb_games(
+    date: str = typer.Option("", "--date", "-d", help="Date in YYYYMMDD format (empty=today)"),
+) -> None:
+    """Show today's MLB games with scores and status."""
+    from mcp_server import espn_public_api
+
+    if not date:
+        from datetime import datetime
+        date = datetime.now().strftime("%Y%m%d")
+    try:
+        data = espn_public_api.get_mlb_games(date)
+        console.print(formatters.fmt_mlb_games(data, date))
+    except Exception as e:
+        console.print(f"Failed to fetch MLB games: {e}")
+        raise typer.Exit(1)
+
+
 def main() -> None:
     app()

@@ -660,3 +660,156 @@ def fmt_player_search(results, query):
         lines.append(f"| {p.name} | {p.position} | {p.proTeam} | {p.total_points} | {owned} |")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Phase C — ESPN Public API formatters
+# ---------------------------------------------------------------------------
+
+
+def fmt_player_news(overview_data: dict, player_name: str) -> str:
+    """Format player news from ESPN public API overview endpoint."""
+    lines = [f"## News — {player_name}", ""]
+
+    # Rotowire blurb (injury/status)
+    rotowire = overview_data.get("rotowire", {})
+    if rotowire:
+        blurb = rotowire.get("blurb", "")
+        if blurb:
+            lines.append(f"**Status:** {blurb}")
+            lines.append("")
+
+    # Next game
+    next_game = overview_data.get("nextGame", {})
+    if next_game:
+        event = next_game.get("event", {})
+        game_name = event.get("name", "")
+        game_date = event.get("date", "")
+        if game_name:
+            lines.append(f"**Next game:** {game_name}" + (f" ({game_date[:10]})" if game_date else ""))
+            lines.append("")
+
+    # News articles
+    news = overview_data.get("news", {})
+    articles = news.get("items", []) if isinstance(news, dict) else []
+    if articles:
+        lines.append("### Recent Headlines")
+        for article in articles[:8]:
+            headline = article.get("headline", "")
+            description = article.get("description", "")
+            published = article.get("published", "")[:10] if article.get("published") else ""
+            if headline:
+                line = f"- **{headline}**"
+                if published:
+                    line += f" ({published})"
+                lines.append(line)
+                if description:
+                    lines.append(f"  {description[:200]}")
+    else:
+        lines.append("No recent news.")
+
+    return "\n".join(lines)
+
+
+def fmt_player_splits(splits_data: dict, player_name: str) -> str:
+    """Format player splits from ESPN public API."""
+    lines = [f"## Splits — {player_name}", ""]
+
+    split_categories = splits_data.get("splitCategories", [])
+    if not split_categories:
+        return f"No split data available for {player_name}."
+
+    for category in split_categories:
+        cat_name = category.get("displayName", "Unknown")
+        splits = category.get("splits", [])
+        if not splits:
+            continue
+
+        # Get stat headers from first split
+        stats = splits[0].get("stats", [])
+        if not stats:
+            continue
+        headers = splits[0].get("abbreviations", []) or [f"S{i}" for i in range(len(stats))]
+
+        lines.append(f"### {cat_name}")
+        header_row = "| Split | " + " | ".join(headers) + " |"
+        separator = "|-------|" + "|".join(["------"] * len(headers)) + "|"
+        lines.append(header_row)
+        lines.append(separator)
+
+        for split in splits:
+            split_name = split.get("displayName", "—")
+            split_stats = split.get("stats", [])
+            vals = [str(v) if v is not None else "—" for v in split_stats]
+            lines.append(f"| {split_name} | " + " | ".join(vals) + " |")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def fmt_player_gamelog(gamelog_data: dict, player_name: str) -> str:
+    """Format player game log from ESPN public API."""
+    lines = [f"## Game Log — {player_name}", ""]
+
+    categories = gamelog_data.get("categories", [])
+    if not categories:
+        # Try events directly
+        events = gamelog_data.get("events", {})
+        if not events:
+            return f"No game log data available for {player_name}."
+
+    # Process each category (batting/pitching)
+    for cat in categories:
+        cat_name = cat.get("displayName", "")
+        events = cat.get("events", [])
+        labels = cat.get("labels", [])
+
+        if not events or not labels:
+            continue
+
+        if cat_name:
+            lines.append(f"### {cat_name}")
+
+        header = "| Date | Opponent | " + " | ".join(labels[:12]) + " |"
+        sep = "|------|----------|" + "|".join(["------"] * min(len(labels), 12)) + "|"
+        lines.append(header)
+        lines.append(sep)
+
+        for event in events[:20]:  # Last 20 games
+            date = event.get("gameDate", "")[:10]
+            opponent = event.get("opponent", {}).get("abbreviation", "—")
+            stats = event.get("stats", [])
+            vals = [str(v) if v is not None else "—" for v in stats[:12]]
+            # Pad if needed
+            while len(vals) < min(len(labels), 12):
+                vals.append("—")
+            lines.append(f"| {date} | {opponent} | " + " | ".join(vals) + " |")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def fmt_mlb_games(games_data: dict, date: str) -> str:
+    """Format MLB games for a specific date."""
+    events = games_data.get("events", [])
+    if not events:
+        return f"No MLB games found for {date}."
+
+    lines = [
+        f"## MLB Games — {date[:4]}-{date[4:6]}-{date[6:]}",
+        "",
+        "| Game | Status | Score/Time |",
+        "|------|--------|------------|",
+    ]
+
+    for event in events:
+        name = event.get("summary", event.get("name", "Unknown"))
+        status = event.get("status", "")
+        if isinstance(status, dict):
+            status = status.get("type", {}).get("shortDetail", "—")
+        score = event.get("lastPlay", {}).get("text", "") if event.get("lastPlay") else "—"
+        lines.append(f"| {name} | {status} | {score} |")
+
+    return "\n".join(lines)
