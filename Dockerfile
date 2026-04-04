@@ -21,5 +21,4 @@ RUN uv sync --frozen --no-dev
 ENV MCP_TRANSPORT=sse
 ENV PYTHONUNBUFFERED=1
 
-ENTRYPOINT ["/app/.venv/bin/python", "-m"]
-CMD ["mcp_server.server"]
+CMD ["/app/.venv/bin/python", "-m", "mcp_server.server"]
