@@ -3,6 +3,13 @@
     "espn-baseball": {
       "command": "uv",
       "args": ["run", "--project", ".", "espn-mcp"]
+    },
+    "espn-memory": {
+      "command": "uv",
+      "args": ["run", "--project", "./memory", "python", "server.py"],
+      "env": {
+        "MEMORY_DB_PATH": "~/.espn-fantasy/memory.db"
+      }
     }
   }
 }
