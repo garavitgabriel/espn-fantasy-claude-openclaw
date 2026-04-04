@@ -24,31 +24,25 @@ Turn your H2H Categories league into a conversation. Scout opponents, find free 
 - **Budget strategy** — Stars-and-scrubs vs balanced, position scarcity alerts (C, SS), nomination targets
 - **Bid guidance** — For each nominated player: max bid, walk-away price, and alternative targets if you lose
 
-### Automated Monitoring (Scheduled Agents)
+### Automated Monitoring (Cron Jobs)
 
-Set up Claude to monitor your league on autopilot using [scheduled agents](https://docs.anthropic.com/en/docs/claude-code/scheduled-agents):
+Don't wait until you remember to check — set up scheduled agents to monitor your league on autopilot. Platforms like **OpenClaw** support cron-based agent execution, so the plugin checks your league on a schedule and alerts you when something needs attention.
 
-```bash
-# Morning lineup check — runs daily at 8am
-claude schedule create \
-  --name "espn-lineup-check" \
-  --schedule "0 8 * * *" \
-  --prompt "Check my roster for injured players, empty slots, or anyone on the bench who should be starting. Flag any issues."
+**Example schedules:**
 
-# Waiver wire scout — runs every 6 hours
-claude schedule create \
-  --name "espn-waiver-scout" \
-  --schedule "0 */6 * * *" \
-  --prompt "Check recent league activity for dropped players worth picking up. Cross-reference with my roster needs and weak categories. Only alert me if there's a clear upgrade available."
+| Schedule | What it does | Cron |
+|---|---|---|
+| **Lineup check** | Flag injured starters, empty slots, bench players who should start | Daily at 8am |
+| **Waiver wire scout** | Monitor drops, cross-reference with roster needs and weak categories | Every 6 hours |
+| **Weekly matchup prep** | Scout opponent, identify swing categories, streaming targets, game plan | Monday 9am |
 
-# Weekly matchup prep — runs Monday mornings
-claude schedule create \
-  --name "espn-weekly-prep" \
-  --schedule "0 9 * * 1" \
-  --prompt "Run a full weekly prep: scout my opponent, identify swing categories, check for streaming pitchers, and give me a game plan for the week."
-```
+**Example prompts for your scheduled agents:**
 
-These run automatically and push notifications when something needs your attention — an injured starter, a valuable player dropped, or a close category you could flip with a streaming pickup.
+- *"Check my roster for injured players, empty slots, or anyone on the bench who should be starting. Flag any issues."*
+- *"Check recent league activity for dropped players worth picking up. Cross-reference with my roster needs and weak categories. Only alert me if there's a clear upgrade."*
+- *"Run a full weekly prep: scout my opponent, identify swing categories, check for streaming pitchers, and give me a game plan for the week."*
+
+This turns the plugin from reactive (you ask, it answers) to proactive (it watches your league and tells you when to act).
 
 ### Cross-Session Memory
 
