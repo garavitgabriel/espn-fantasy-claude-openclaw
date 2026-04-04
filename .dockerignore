@@ -1,0 +1,10 @@
+.venv
+venv
+.git
+.pytest_cache
+tests
+*.egg-info
+__pycache__
+.env
+.claude
+plugin

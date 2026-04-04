@@ -1,0 +1,9 @@
+{
+  "name": "espn-fantasy",
+  "version": "1.0.0",
+  "description": "ESPN Fantasy Baseball advisor — matchup scouting, free agent recommendations, trade analysis, draft assistance, and cross-session memory for H2H Categories leagues.",
+  "author": {
+    "name": "Gabriel Garavit"
+  },
+  "repository": "https://github.com/garavitgabriel/espn-api"
+}

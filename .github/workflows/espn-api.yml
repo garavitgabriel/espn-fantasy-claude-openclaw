@@ -1,24 +1,26 @@
-name: Espn API
+name: CI
 on:
   push:
-    branches:
-      - master  
+    branches: [master]
   pull_request:
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v3
-      with:
-        python-version: '3.8'
-    - name: Install dependencies
-      run: python setup.py install
-    - name: Test with nosetests
-      run: python3 setup.py nosetests
-    - name: Upload coverage to Codecov  
-      uses: codecov/codecov-action@v4
-      with:
-        token: ${{ secrets.CODECOV_TOKEN }} # required
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: uv sync --group dev
+      - name: Verify CLI loads
+        run: uv run espn --help
+      - name: Verify MCP server loads
+        run: uv run python -c "from mcp_server.server import mcp; print('MCP server OK')"
+      - name: Run tests
+        run: uv run pytest tests/ -q

@@ -1,4 +1,0 @@
-# installs dependencies from ./setup.py, and the package itself,
-# in editable mode
--e .
-mcp[cli]>=1.0.0

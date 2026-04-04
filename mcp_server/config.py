@@ -1,7 +1,8 @@
 """League connection and environment configuration.
 
-Loads ESPN credentials from .env, creates a cached League singleton,
-and resolves the user's team from ESPN_TEAM_ID / ESPN_TEAM_NAME.
+Loads ESPN credentials from ~/.espn-fantasy/config.json (set via ``espn auth
+token``) with environment-variable overrides, creates a cached League
+singleton, and resolves the user's team from ESPN_TEAM_ID / ESPN_TEAM_NAME.
 """
 
 import os
@@ -23,13 +24,16 @@ if load_dotenv is not None:
     load_dotenv(os.path.join(_project_root, ".env"))
 
 from espn_api.baseball import League
+from .auth import ConfigManager
 
-ESPN_S2 = os.environ.get("ESPN_S2", "")
-ESPN_SWID = os.environ.get("ESPN_SWID", "")
-ESPN_LEAGUE_ID = int(os.environ.get("ESPN_LEAGUE_ID", "612122596"))
-ESPN_YEAR = int(os.environ.get("ESPN_YEAR", "2026"))
-ESPN_TEAM_ID = os.environ.get("ESPN_TEAM_ID", "").strip()
-ESPN_TEAM_NAME = os.environ.get("ESPN_TEAM_NAME", "Gabriel")
+_config = ConfigManager().load()
+
+ESPN_S2 = _config.espn_s2 or ""
+ESPN_SWID = _config.espn_swid or ""
+ESPN_LEAGUE_ID = _config.league_id
+ESPN_YEAR = _config.year
+ESPN_TEAM_ID = (_config.team_id or "").strip()
+ESPN_TEAM_NAME = _config.team_name
 
 _league_instance = None
 

@@ -36,9 +36,11 @@ if transport in ("sse", "streamable-http", "http"):
 
 mcp = FastMCP(**_mcp_kwargs)
 
-# Register all tools
+# Register all tools and resources
 from .tools import register_tools
+from .resources import register_resources
 register_tools(mcp)
+register_resources(mcp)
 
 
 def run_server():

@@ -1,295 +1,203 @@
-# ESPN Fantasy Baseball API + MCP Server + CLI
+# ESPN Fantasy Baseball — MCP Plugin for Claude
 
-A Python toolkit for ESPN Fantasy Baseball built on top of [cwendt94/espn-api](https://github.com/cwendt94/espn-api). Includes the upstream library, an **MCP server** for AI-assisted league management via Claude Code, and a **CLI** for quick terminal queries.
+A Python toolkit for ESPN Fantasy Baseball built on [cwendt94/espn-api](https://github.com/cwendt94/espn-api). Includes an **MCP server** (16 tools + 5 resources), a **Typer CLI**, **8 skills**, a **memory system**, and a **Claude Code plugin** — all for H2H Categories league management.
 
-## What's Included
-
-| Layer | Description |
-|-------|-------------|
-| **espn_api/** | Upstream ESPN Fantasy API library (Football, Basketball, Hockey, Baseball) |
-| **mcp_server/** | MCP server exposing 16 baseball tools to Claude Code |
-| **mcp_server/cli.py** | Standalone CLI mirroring the same 16 tools |
+Works with **Claude Code**, **Claude Desktop**, **Claude Cowork**, and **OpenClaw**.
 
 ## Quick Start
 
-### 1. Clone & install
+### Prerequisites
+
+- Python 3.10+
+- [uv](https://docs.astral.sh/uv/) (`curl -LsSf https://astral.sh/uv/install.sh | sh`)
+- ESPN Fantasy Baseball account
+
+### Setup
 
 ```bash
-git clone https://github.com/YOUR_USER/espn-api
+git clone https://github.com/garavitgabriel/espn-api.git
 cd espn-api
-python -m venv venv
-source venv/bin/activate
-pip install -r requirementsV2.txt
-pip install mcp python-dotenv
+uv sync
 ```
 
-### 2. Configure credentials
+### Authenticate
 
-Copy the example env file and fill in your ESPN credentials:
+Get your ESPN cookies: log in to [ESPN Fantasy](https://fantasy.espn.com) > DevTools > Application > Cookies > copy `espn_s2` and `SWID`.
 
 ```bash
-cp .env.example .env
+uv run espn auth token <ESPN_S2> <ESPN_SWID>
 ```
 
-```env
-ESPN_S2=your_espn_s2_cookie
-ESPN_SWID={your_swid}
-ESPN_LEAGUE_ID=612122596
-ESPN_YEAR=2026
-ESPN_TEAM_ID=
-ESPN_TEAM_NAME=Gabriel
+Or copy `.env.example` to `.env` and fill in the values.
+
+### Activate
+
+| Platform | How |
+|---|---|
+| **Claude Code** | Open the project — auto-discovered via `.claude-plugin/` |
+| **Claude Desktop** | Add to `claude_desktop_config.json` (see below) |
+| **Claude Cowork** | `uv run espn build-plugin build --target claude --url <SSE_URL>`, upload zip |
+| **OpenClaw** | `./install-openclaw.sh` (see [docs/openclaw-setup.md](docs/openclaw-setup.md)) |
+
+<details>
+<summary>Claude Desktop config</summary>
+
+```json
+{
+  "mcpServers": {
+    "espn-baseball": {
+      "command": "uv",
+      "args": ["run", "--project", "/path/to/espn-api", "espn-mcp"]
+    }
+  }
+}
 ```
 
-`ESPN_TEAM_ID` is the highest-priority resolver for tools that operate on "my team" and is the most reliable option. If `ESPN_TEAM_ID` is unset, the server falls back to `ESPN_TEAM_NAME` using normalized matching in this order: exact team-name match, partial team-name match, exact owner-name match, then partial owner-name match.
+File location: `~/Library/Application Support/Claude/claude_desktop_config.json`
+</details>
 
-To find your `ESPN_S2` and `ESPN_SWID` cookies, log in to ESPN Fantasy, open browser DevTools > Application > Cookies, and copy the values.
-
-### 3. Use the CLI
+## CLI
 
 ```bash
-source venv/bin/activate
+uv run espn standings
+uv run espn roster
+uv run espn matchup --week 5
+uv run espn free-agents --position SS --size 10
+uv run espn player "Shohei Ohtani"
+uv run espn compare "Shohei Ohtani" "Aaron Judge"
+uv run espn trade --give "Player A" --receive "Player B"
 
-python -m mcp_server.cli standings
-python -m mcp_server.cli roster
-python -m mcp_server.cli matchup
-python -m mcp_server.cli free-agents --position SS --size 10
-python -m mcp_server.cli player "Shohei Ohtani"
-python -m mcp_server.cli compare "Shohei Ohtani" "Aaron Judge"
-python -m mcp_server.cli trade --give "Player A" --receive "Player B"
+# Draft day
+uv run espn scoring
+uv run espn slots
+uv run espn draft
+uv run espn needs
 
-# Draft day tools
-python -m mcp_server.cli scoring
-python -m mcp_server.cli slots
-python -m mcp_server.cli draft
-python -m mcp_server.cli needs
+# Auth
+uv run espn auth token <ESPN_S2> <ESPN_SWID>
+uv run espn auth status
+uv run espn auth logout
 
-python -m mcp_server.cli --help
+# Plugin bundle
+uv run espn build-plugin build --target openclaw
+uv run espn build-plugin build --target claude --url https://your-app.up.railway.app/sse
+
+uv run espn --help
 ```
 
-### 4. Use with Claude Code (MCP)
+## MCP Tools (16)
 
-The `.mcp.json` at the project root registers the server. Claude Code picks it up automatically when you open the project. All 16 tools become available as natural-language actions in conversation.
+<details>
+<summary>Full tool reference</summary>
 
-To run the MCP server manually:
+| Tool | Description |
+|---|---|
+| `get_my_roster` | Your team's full roster with stats and injury status |
+| `get_team_roster` | Any team's roster by name |
+| `get_matchup` | Current or specific week matchup with H2H category breakdown |
+| `get_standings` | League standings sorted by rank |
+| `get_free_agents` | Best available players, filterable by position |
+| `get_recent_activity` | Recent adds, drops, and trades |
+| `get_box_scores` | All matchup scores for a week |
+| `get_player_info` | Detailed stats for any player |
+| `compare_players` | Side-by-side player comparison |
+| `get_league_rosters` | Overview of all teams' rosters |
+| `analyze_trade` | Evaluate a trade by comparing give vs receive |
+| `get_scoring_categories` | League's H2H categories with direction |
+| `get_roster_slots` | Roster slot configuration |
+| `get_draft_board` | Draft picks, auction prices, team budgets |
+| `get_roster_needs` | Which positions you still need to fill |
+| `refresh_data` | Pull latest data from ESPN |
+</details>
 
-```bash
-python -m mcp_server.server
-# or equivalently:
-python -m mcp_server
-```
+## MCP Resources (5)
 
-## CLI Commands
+| Resource URI | Description |
+|---|---|
+| `espn://workflow/season-management` | Weekly season management playbook |
+| `espn://workflow/draft-day` | Auction draft day playbook |
+| `espn://info/league-settings` | H2H Categories format, scoring, roster config |
+| `espn://skill/matchup-scout` | Matchup analysis workflow |
+| `espn://skill/free-agent-finder` | Free agent search workflow |
 
-| Command | Args | Description |
-|---------|------|-------------|
-| `roster` | — | Show my team's roster |
-| `team-roster` | `TEAM_NAME` | Show any team's roster (normalized exact match first, then partial) |
-| `matchup` | `--week N` | My current matchup (category breakdown) |
-| `standings` | — | League standings by rank |
-| `free-agents` | `--position POS --size N` | Best available free agents |
-| `activity` | `--size N` | Recent league transactions |
-| `box-scores` | `--week N` | All matchup box scores |
-| `player` | `NAME` | Detailed player stats |
-| `compare` | `PLAYER1 PLAYER2` | Side-by-side player comparison |
-| `rosters` | — | Overview of all league rosters |
-| `trade` | `--give "A,B" --receive "C,D"` | Evaluate a potential trade |
-| `scoring` | — | Show league's H2H scoring categories |
-| `slots` | — | Show roster slot configuration |
-| `draft` | — | Show draft board, auction prices & budgets |
-| `needs` | — | Show my unfilled roster positions |
-| `refresh` | — | Pull latest data from ESPN |
+## Skills (8)
+
+| Skill | Description |
+|---|---|
+| `matchup-scout` | Analyze your H2H matchup and find advantages |
+| `free-agent-finder` | Find the best available players for your needs |
+| `trade-analyzer` | Evaluate trade proposals with category impact |
+| `draft-assistant` | Auction draft guidance and budget strategy |
+| `weekly-prep` | Full weekly preparation workflow |
+| `category-strategist` | Optimize your category standings |
+| `waiver-wire-scout` | Monitor league activity for opportunities |
+| `season-outlook` | Big-picture season analysis and trends |
 
 ## Project Structure
 
 ```
 espn-api/
+├── .claude-plugin/        # Plugin manifest (auto-discovered by Claude Code)
+├── .mcp.json              # MCP server registration (uv run)
+├── skills/                # 8 agent-invoked skills
+├── commands/              # 5 user-invoked slash commands
+├── agents/                # fantasy-advisor agent
+├── memory/                # SQLite memory MCP server (cross-session)
 ├── espn_api/              # Upstream ESPN Fantasy API library
-│   ├── baseball/          # Baseball-specific models & league logic
-│   ├── football/          # Football API
-│   ├── basketball/        # Basketball API
-│   ├── hockey/            # Hockey API
-│   └── base_league.py     # Shared base class
-├── mcp_server/            # Our MCP server + CLI layer
-│   ├── __main__.py        # Allows `python -m mcp_server` to start the server
-│   ├── server.py          # FastMCP server entry point (stdio/sse/streamable-http)
-│   ├── tools.py           # 16 MCP tool definitions
+├── mcp_server/            # MCP server + CLI
+│   ├── server.py          # FastMCP server (16 tools + 5 resources)
+│   ├── tools.py           # Tool definitions
+│   ├── resources.py       # MCP resource definitions
 │   ├── formatters.py      # Shared markdown table formatters
-│   ├── config.py          # League connection & env config
-│   └── cli.py             # Argparse CLI (same 16 commands)
-├── tests/                 # Upstream test suite
-├── .env                   # ESPN credentials (gitignored)
-├── .mcp.json              # Claude Code MCP server registration
-├── railway.json           # Railway deployment config
-├── Procfile               # Railway process definition
-├── requirements-deploy.txt # Deployment dependencies
-└── README.md
+│   ├── config.py          # League connection & config
+│   ├── auth.py            # ConfigManager + credential storage
+│   └── cli/               # Typer CLI
+│       ├── __init__.py    # 16 league commands
+│       ├── auth.py        # token, status, logout
+│       └── build_plugin.py # Plugin bundle builder
+├── tests/                 # Test suite
+├── pyproject.toml         # uv/hatchling package config
+├── Dockerfile             # Production container
+└── install-openclaw.sh    # OpenClaw one-command installer
 ```
-
-## MCP Server Tools
-
-The MCP server exposes these tools to Claude Code:
-
-- **get_my_roster** — Your team's full roster with stats and injury status
-- **get_team_roster** — Any team's roster by name
-- **get_matchup** — Current or specific week matchup with H2H category breakdown
-- **get_standings** — League standings sorted by rank
-- **get_free_agents** — Best available players, filterable by position
-- **get_recent_activity** — Recent adds, drops, and trades
-- **get_box_scores** — All matchup scores for a week
-- **get_player_info** — Detailed stats for any player
-- **compare_players** — Side-by-side player comparison
-- **get_league_rosters** — Overview of all teams' rosters
-- **analyze_trade** — Evaluate a trade by comparing give vs receive
-- **get_scoring_categories** — League's H2H categories with direction (higher/lower wins)
-- **get_roster_slots** — Roster slot configuration (positions and counts)
-- **get_draft_board** — Draft picks, auction prices, team budgets, and roster needs
-- **get_roster_needs** — Which positions you still need to fill
-- **refresh_data** — Pull latest data from ESPN
 
 ## Transports
 
-The server supports three MCP transports, controlled by the `MCP_TRANSPORT` environment variable:
-
 | Transport | Use Case | Default Port |
-|-----------|----------|--------------|
-| `stdio` | Local — Claude Code, IDE plugins (default) | N/A |
-| `sse` | Remote — Railway, any HTTP client | 8000 |
+|---|---|---|
+| `stdio` | Local — Claude Code, Desktop, IDE plugins (default) | N/A |
+| `sse` | Remote — Railway, Cowork, any HTTP client | 8000 |
 | `streamable-http` | Remote — newer MCP clients | 8000 |
 
 ```bash
 # Local (default)
-python -m mcp_server.server
+uv run espn-mcp
 
-# Remote / deployed
-MCP_TRANSPORT=sse python -m mcp_server.server
+# Remote
+MCP_TRANSPORT=sse uv run espn-mcp
 ```
 
 ## Deploy to Railway
 
-Railway runs the server as a persistent process with SSE transport so any remote MCP client can connect over HTTPS.
+1. Push to GitHub
+2. Create a Railway project > Deploy from GitHub
+3. Set environment variables: `ESPN_S2`, `ESPN_SWID`, `ESPN_LEAGUE_ID`, `ESPN_YEAR`, `ESPN_TEAM_NAME`, `MCP_TRANSPORT=sse`
+4. Railway builds via the Dockerfile and starts the server
+5. Your SSE endpoint: `https://your-app.up.railway.app/sse`
+6. Healthcheck: `https://your-app.up.railway.app/health`
 
-### 1. Create a GitHub repo and push
-
-```bash
-git remote add origin https://github.com/YOUR_USER/espn-baseball-mcp.git
-git push -u origin master
-```
-
-### 2. Deploy on Railway
-
-1. Go to [railway.com](https://railway.com) and create a new project
-2. Select **"Deploy from GitHub Repo"** and pick your repo
-3. Railway auto-detects Python via `requirements-deploy.txt`
-4. Add environment variables in the Railway dashboard:
-
-```
-ESPN_S2=your_espn_s2_cookie
-ESPN_SWID={your_swid}
-ESPN_LEAGUE_ID=612122596
-ESPN_YEAR=2026
-ESPN_TEAM_ID=
-ESPN_TEAM_NAME=Gabriel
-MCP_TRANSPORT=sse
-```
-
-5. Railway assigns a public URL like `https://espn-baseball-mcp-production.up.railway.app`
-
-### 3. Connect from any MCP client
-
-Once deployed, the SSE endpoint is at:
-
-```
-https://your-app.up.railway.app/sse
-```
-
-## Using with Other MCP Clients
-
-### Local (stdio) — Claude Code, Cursor, Windsurf
-
-For local use, the client spawns the server as a subprocess. Add to your MCP config:
-
-```json
-{
-  "mcpServers": {
-    "espn-baseball": {
-      "command": "/path/to/espn-api/venv/bin/python",
-      "args": ["-m", "mcp_server.server"],
-      "cwd": "/path/to/espn-api"
-    }
-  }
-}
-```
-
-Config file locations:
-- **Claude Code:** `.mcp.json` in the project root (already included)
-- **Claude Desktop:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Cursor / Windsurf:** Check your IDE's MCP documentation for the config path
-
-### Remote (SSE) — Deployed server
-
-For a deployed Railway instance, point your client at the SSE URL:
-
-```json
-{
-  "mcpServers": {
-    "espn-baseball": {
-      "url": "https://your-app.up.railway.app/sse"
-    }
-  }
-}
-```
-
-### Programmatic (Python)
-
-**Local (stdio):**
-
-```python
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
-
-server_params = StdioServerParameters(
-    command="/path/to/espn-api/venv/bin/python",
-    args=["-m", "mcp_server.server"],
-    cwd="/path/to/espn-api",
-)
-
-async with stdio_client(server_params) as (read, write):
-    async with ClientSession(read, write) as session:
-        await session.initialize()
-        result = await session.call_tool("get_standings", {})
-        print(result)
-```
-
-**Remote (SSE):**
-
-```python
-from mcp import ClientSession
-from mcp.client.sse import sse_client
-
-async with sse_client("https://your-app.up.railway.app/sse") as (read, write):
-    async with ClientSession(read, write) as session:
-        await session.initialize()
-        tools = await session.list_tools()
-        result = await session.call_tool("get_standings", {})
-        print(result)
-```
-
-## Upstream ESPN API
-
-For documentation on the underlying `espn_api` library (all sports), see the [upstream wiki](https://github.com/cwendt94/espn-api/wiki).
-
-```python
-from espn_api.baseball import League
-
-league = League(league_id=612122596, year=2026, espn_s2="...", swid="...")
-print(league.standings())
-```
-
-## Running Tests
+## Development
 
 ```bash
-pytest
+uv sync --group dev
+uv run pytest
+uv run espn --help
+uv run espn-mcp  # Start MCP server locally
 ```
+
+## Upstream API
+
+For documentation on the underlying `espn_api` library, see the [upstream wiki](https://github.com/cwendt94/espn-api/wiki).
 
 ## License
 

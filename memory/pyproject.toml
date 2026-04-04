@@ -1,0 +1,13 @@
+[project]
+name = "espn-fantasy-memory"
+version = "1.0.0"
+description = "Local SQLite memory server for the ESPN Fantasy Baseball plugin"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.0.0",
+    "aiosqlite>=0.20.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

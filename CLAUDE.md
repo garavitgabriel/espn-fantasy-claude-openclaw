@@ -2,44 +2,106 @@
 
 ## Project Overview
 
-This is a fork of [cwendt94/espn-api](https://github.com/cwendt94/espn-api) extended with an **MCP server** and **CLI** for ESPN Fantasy Baseball. The league is "El Rey" (league ID 612122596), an H2H Categories format.
+This is a fork of [cwendt94/espn-api](https://github.com/cwendt94/espn-api) extended with an **MCP server**, **CLI**, and **Claude Code plugin** for ESPN Fantasy Baseball. The league is "El Rey" (league ID 612122596), an H2H Categories format.
+
+Works with Claude Code, Claude Desktop, Claude Cowork, and OpenClaw.
+
+## Quick Reference
+
+```bash
+uv sync                              # Install dependencies
+uv run espn auth token <S2> <SWID>   # Set ESPN credentials
+uv run espn standings                # CLI command
+uv run espn-mcp                      # Start MCP server (stdio)
+uv run pytest                        # Run tests
+```
 
 ## Architecture
 
-- **espn_api/** — Upstream library. Avoid modifying unless fixing upstream bugs.
-- **mcp_server/** — Our code. All new features go here.
-  - `config.py` — Loads `.env`, creates the League singleton, resolves the user's team by `ESPN_TEAM_NAME`. Validates credentials on first use.
-  - `formatters.py` — Pure functions that turn espn_api objects into markdown tables. Shared by both MCP tools and CLI. Contains 14 `fmt_*` functions.
-  - `tools.py` — 16 MCP tool definitions registered on the FastMCP server. Thin wrappers: fetch data via `config.py`, format via `formatters.py`.
-  - `cli.py` — Argparse CLI with 16 subcommands. Same logic as tools.py but invoked from the terminal.
-  - `server.py` — FastMCP server entry point (stdio transport).
-  - `__main__.py` — Allows `python -m mcp_server` to start the server.
+```
+espn-api/
+├── .claude-plugin/plugin.json   # Plugin manifest (auto-discovered)
+├── .mcp.json                    # MCP registration (uv run espn-mcp)
+├── settings.json                # Default agent: fantasy-advisor
+├── skills/                      # 8 agent-invoked skills
+├── commands/                    # 5 user-invoked slash commands
+├── agents/                      # fantasy-advisor agent
+├── memory/                      # SQLite memory MCP server (separate package)
+├── espn_api/                    # Upstream library (don't modify)
+├── mcp_server/                  # MCP server + CLI (main package)
+│   ├── server.py                # FastMCP: 16 tools + 5 resources
+│   ├── tools.py                 # Tool definitions → register_tools(mcp)
+│   ├── resources.py             # Resource definitions → register_resources(mcp)
+│   ├── formatters.py            # 14 fmt_* functions (shared by tools + CLI)
+│   ├── config.py                # League singleton, credential loading
+│   ├── auth.py                  # ConfigManager + EspnConfig (Pydantic)
+│   └── cli/                     # Typer CLI
+│       ├── __init__.py          # 16 league commands + main()
+│       ├── auth.py              # token, status, logout
+│       └── build_plugin.py      # Plugin bundle builder
+├── pyproject.toml               # uv/hatchling config, entry points
+└── Dockerfile                   # Production container
+```
 
 ## Key Patterns
 
-- **Formatters are the single source of truth for output.** Both `tools.py` and `cli.py` call functions in `formatters.py`. Never duplicate formatting logic.
+- **Formatters are the single source of truth for output.** Both `tools.py` and `cli/` call functions in `formatters.py`. Never duplicate formatting logic.
 - **config.py owns the League instance.** Always use `get_league()` and `get_my_team()` — never instantiate League directly in tools or CLI.
 - **MCP tools and CLI commands are 1:1.** Every MCP tool has a matching CLI subcommand. When adding a new capability, add it to both.
+- **Credentials: env vars > config file > defaults.** `ConfigManager` loads from `~/.espn-fantasy/config.json`, then applies env var overrides. Users can set credentials via `espn auth token` or `.env`.
+- **The plugin wraps the MCP, never replaces it.** Skills orchestrate MCP tools via markdown instructions. The standalone MCP stays stateless.
+- **Memory is optional and plugin-only.** The SQLite memory server runs locally via stdio. It does NOT affect the standalone MCP. Skills degrade gracefully without memory.
 
 ## Development
 
 ```bash
-# Activate the venv (required — dependencies are here)
-source venv/bin/activate
-
-# Run CLI
-python -m mcp_server.cli standings
-
-# Run MCP server directly (for testing)
-python -m mcp_server.server
-
-# Run tests
-pytest
+uv sync --group dev     # Install with dev deps
+uv run pytest           # Run tests
+uv run espn --help      # CLI help
+uv run espn-mcp         # Start MCP server (stdio)
 ```
+
+## Plugin Development
+
+```bash
+# Test the plugin locally (auto-discovered from repo root)
+claude
+
+# Available slash commands
+/espn-fantasy:standings
+/espn-fantasy:roster [team_name]
+/espn-fantasy:matchup [week]
+/espn-fantasy:scout [position]
+/espn-fantasy:refresh
+```
+
+### Plugin ↔ Skill ↔ MCP Tool Mapping
+
+| Plugin Skill | Type | MCP Tools Used |
+|-------------|------|----------------|
+| `matchup-scout` | Agent-invoked | `get_standings`, `get_matchup`, `get_team_roster`, `get_my_roster` + memory |
+| `free-agent-finder` | Agent-invoked | `get_scoring_categories`, `get_my_roster`, `get_roster_needs`, `get_free_agents`, `get_player_info` + memory |
+| `trade-analyzer` | Agent-invoked | `get_scoring_categories`, `analyze_trade`, `get_player_info`, `get_my_roster` + memory |
+| `draft-assistant` | Agent-invoked | `get_scoring_categories`, `get_roster_slots`, `get_draft_board`, `get_roster_needs`, `get_free_agents`, `get_player_info` + memory |
+| `weekly-prep` | Agent-invoked | `get_standings`, `get_matchup`, `get_my_roster`, `get_team_roster`, `get_free_agents` + memory |
+| `category-strategist` | Agent-invoked | `get_standings`, `get_my_roster`, `get_scoring_categories`, `get_league_rosters` + memory |
+| `waiver-wire-scout` | Agent-invoked | `get_recent_activity`, `get_my_roster`, `get_scoring_categories`, `get_player_info` + memory |
+| `season-outlook` | Agent-invoked | `get_standings`, `get_my_roster`, `get_scoring_categories`, `get_box_scores` + memory |
+
+### Memory MCP Server
+
+The memory server (`memory/`) is a local SQLite-backed MCP server with 14 tools across 6 tables: `matchup_history`, `roster_moves`, `watchlist`, `category_trends`, `draft_picks`, `preferences`. DB stored at `~/.espn-fantasy/memory.db`.
+
+### Adding a New Skill
+
+1. Create `skills/<skill-name>/SKILL.md` with frontmatter (`name`, `description`) and step-by-step instructions referencing MCP tool names.
+2. Skills reference ESPN tools as `get_*` and memory tools as `save_*`/`get_*` from the memory server.
+3. Include conditional memory steps: "If memory tools are available, call X."
+4. Update the skill mapping table above.
 
 ## Environment Variables
 
-Stored in `.env` (gitignored). Required:
+Set via `espn auth token` (stored in `~/.espn-fantasy/config.json`) or `.env` (gitignored). Env vars always override the config file.
 
 | Variable | Purpose |
 |----------|---------|
@@ -49,12 +111,22 @@ Stored in `.env` (gitignored). Required:
 | `ESPN_YEAR` | Season year (default: 2026) |
 | `ESPN_TEAM_NAME` | Partial match for your team name (default: Gabriel) |
 
+## MCP Resources
+
+| URI | Description |
+|-----|-------------|
+| `espn://workflow/season-management` | Weekly season management playbook |
+| `espn://workflow/draft-day` | Auction draft day playbook |
+| `espn://info/league-settings` | H2H Categories format, scoring, roster config |
+| `espn://skill/matchup-scout` | Matchup analysis workflow |
+| `espn://skill/free-agent-finder` | Free agent search workflow |
+
 ## Tool ↔ CLI ↔ Formatter Mapping
 
 | MCP Tool | CLI Command | Formatter |
 |----------|-------------|-----------|
 | `get_my_roster` | `roster` | `fmt_roster` |
-| `get_team_roster` | `team-roster` | `fmt_roster` |
+| `get_team_roster` | `roster --team X` | `fmt_roster` |
 | `get_matchup` | `matchup` | `fmt_box_score` |
 | `get_standings` | `standings` | `fmt_standings` |
 | `get_free_agents` | `free-agents` | `fmt_free_agents` |
@@ -74,8 +146,8 @@ Stored in `.env` (gitignored). Required:
 
 1. Add formatter function in `formatters.py` if new output formatting is needed.
 2. Add MCP tool in `tools.py` inside `register_tools()`.
-3. Add CLI subcommand in `cli.py` — new `cmd_*` function + argparse subparser + dispatch entry.
-4. Update the CLI commands table in `README.md`.
+3. Add `@app.command()` in `cli/__init__.py`.
+4. Update the tool mapping table above and in `README.md`.
 
 ## Agent Workflows
 
@@ -100,9 +172,22 @@ The league uses **AUCTION** draft ($280 budget per team). When assisting during 
 5. **Value by category** — Don't just rank by total points. The 14 categories are: AVG, HR, OPS, R, RBI, SB, B_SO (lower wins) | WHIP (lower wins), ERA (lower wins), K, W, L (lower wins), SV, HLD. Target players who help in categories you're weakest in.
 6. **Budget strategy** — With $280 and ~20 active slots, average cost is ~$14/player. Stars go for $40-60+. Track opponent budgets to know when you can win players cheaply late.
 
+## Building Plugin Bundles
+
+```bash
+# For Claude Cowork (requires deployed SSE URL)
+uv run espn build-plugin build --target claude --url https://your-app.up.railway.app/sse
+
+# For OpenClaw (local)
+uv run espn build-plugin build --target openclaw
+
+# Without memory server
+uv run espn build-plugin build --target openclaw --no-memory
+```
+
 ## Gotchas
 
 - The `espn_api` baseball module uses H2H Categories scoring. Box scores have `home_stats`/`away_stats` dicts with per-category breakdowns — not simple point totals.
 - `league.player_info()` can return a single Player or a list. Always handle both cases.
 - `league.free_agents()` accepts `position` as a string (e.g., "SS"), not the numeric ESPN position ID.
-- The `.mcp.json` uses an absolute path to the venv Python. If the venv moves, update it.
+- The `.mcp.json` uses `uv run` — requires [uv](https://docs.astral.sh/uv/) to be installed.
