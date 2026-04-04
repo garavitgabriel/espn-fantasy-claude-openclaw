@@ -30,14 +30,14 @@ espn-api/
 ├── memory/                      # SQLite memory MCP server (separate package)
 ├── espn_api/                    # Upstream library (don't modify)
 ├── mcp_server/                  # MCP server + CLI (main package)
-│   ├── server.py                # FastMCP: 16 tools + 5 resources
+│   ├── server.py                # FastMCP: 20 tools + 5 resources
 │   ├── tools.py                 # Tool definitions → register_tools(mcp)
 │   ├── resources.py             # Resource definitions → register_resources(mcp)
 │   ├── formatters.py            # 14 fmt_* functions (shared by tools + CLI)
 │   ├── config.py                # League singleton, credential loading
 │   ├── auth.py                  # ConfigManager + EspnConfig (Pydantic)
 │   └── cli/                     # Typer CLI
-│       ├── __init__.py          # 16 league commands + main()
+│       ├── __init__.py          # 20 league commands + main()
 │       ├── auth.py              # token, status, logout
 │       └── build_plugin.py      # Plugin bundle builder
 ├── pyproject.toml               # uv/hatchling config, entry points
@@ -141,6 +141,10 @@ Set via `espn auth login` (browser), `espn auth token` (manual), or `.env` (giti
 | `get_roster_slots` | `slots` | `fmt_roster_slots` |
 | `get_draft_board` | `draft` | `fmt_draft_board` + `fmt_roster_needs` |
 | `get_roster_needs` | `needs` | `fmt_roster_needs` |
+| `get_schedule` | `schedule` | `fmt_schedule` |
+| `get_league_settings` | `settings` | `fmt_league_settings` |
+| `search_player` | `search` | `fmt_player_search` |
+| `get_scoreboard` | `scoreboard` | *(none)* |
 | `refresh_data` | `refresh` | *(none — returns status string)* |
 
 ## Adding a New Tool

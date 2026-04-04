@@ -63,7 +63,7 @@ Memory is powered by a local SQLite database (`~/.espn-fantasy/memory.db`) with 
 
 Two MCP servers working together:
 
-**ESPN Fantasy MCP** (16 tools + 5 resources) — Connects to ESPN's API for live league data: rosters, standings, matchups, free agents, player stats, trades, draft board, and scoring categories. Deployed on Railway via SSE or runs locally via stdio.
+**ESPN Fantasy MCP** (20 tools + 5 resources) — Connects to ESPN's API for live league data: rosters, standings, matchups, free agents, player stats, trades, draft board, and scoring categories. Deployed on Railway via SSE or runs locally via stdio.
 
 **Memory MCP** (14 tools) — Local SQLite server that persists matchup results, roster moves, category assessments, watchlist, draft picks, and user preferences across sessions. Runs locally via stdio.
 
@@ -186,6 +186,12 @@ uv run espn player "Shohei Ohtani"
 uv run espn compare "Shohei Ohtani" "Aaron Judge"
 uv run espn trade --give "Player A" --receive "Player B"
 
+# League info
+uv run espn schedule --team "Gabriel"
+uv run espn settings
+uv run espn search "Ohtani"
+uv run espn scoreboard --week 5
+
 # Draft day
 uv run espn scoring
 uv run espn slots
@@ -205,7 +211,7 @@ uv run espn build-plugin build --target claude --url https://your-app.up.railway
 uv run espn --help
 ```
 
-## MCP Tools (16)
+## MCP Tools (20)
 
 <details>
 <summary>ESPN Fantasy MCP — live league data</summary>
@@ -227,6 +233,10 @@ uv run espn --help
 | `get_roster_slots` | Roster slot configuration |
 | `get_draft_board` | Draft picks, auction prices, team budgets |
 | `get_roster_needs` | Which positions you still need to fill |
+| `get_schedule` | Full season schedule with W/L results, live scores, current week |
+| `get_league_settings` | Comprehensive league config (playoffs, trades, FAAB, divisions, keepers) |
+| `search_player` | Fuzzy player search by partial name |
+| `get_scoreboard` | Lightweight matchup view with live scores and winners |
 | `refresh_data` | Pull latest data from ESPN |
 </details>
 
@@ -338,14 +348,14 @@ espn-api/
 │   └── repos.py           # Repository pattern for each table
 ├── espn_api/              # Upstream ESPN Fantasy API library
 ├── mcp_server/            # ESPN MCP server + CLI
-│   ├── server.py          # FastMCP server (16 tools + 5 resources)
+│   ├── server.py          # FastMCP server (20 tools + 5 resources)
 │   ├── tools.py           # Tool definitions
 │   ├── resources.py       # MCP resource definitions (workflow playbooks)
 │   ├── formatters.py      # Shared markdown formatters (14 fmt_* functions)
 │   ├── config.py          # League singleton + credential loading
 │   ├── auth.py            # ConfigManager (~/.espn-fantasy/config.json)
 │   ├── browser_auth.py    # Playwright-based ESPN login
-│   └── cli/               # Typer CLI (18 commands)
+│   └── cli/               # Typer CLI (22 commands)
 ├── pyproject.toml         # uv/hatchling package config
 ├── Dockerfile             # Production container (Railway-ready)
 └── install-openclaw.sh    # OpenClaw one-command installer
