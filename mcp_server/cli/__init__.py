@@ -255,5 +255,125 @@ def refresh() -> None:
     console.print(f"League data refreshed successfully. Current week: {league.current_week}")
 
 
+# ---------------------------------------------------------------------------
+# Phase B — New commands
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def schedule(
+    team: str = typer.Option("", "--team", "-t", help="Team name (default: my team)"),
+) -> None:
+    """Show a team's full season schedule with results."""
+    league = get_league()
+    if team:
+        t = resolve_team(league, team)
+        if not t:
+            console.print(f"Team '{team}' not found. Available: {describe_available_teams(league)}")
+            raise typer.Exit(1)
+    else:
+        t = get_my_team(league)
+        if not t:
+            console.print(get_my_team_error(league))
+            raise typer.Exit(1)
+    try:
+        league.scoreboard()
+    except Exception:
+        pass
+    console.print(formatters.fmt_schedule(t, current_week=league.current_week))
+
+
+@app.command()
+def settings() -> None:
+    """Show comprehensive league settings (playoffs, trades, FAAB, divisions)."""
+    league = get_league()
+    console.print(formatters.fmt_league_settings(league.settings))
+
+
+@app.command()
+def search(
+    query: str = typer.Argument(..., help="Partial player name to search"),
+) -> None:
+    """Search for players by partial name (fuzzy matching)."""
+    import difflib
+
+    league = get_league()
+    query_lower = query.lower()
+
+    matching_names = [
+        name for name in league.player_map.keys()
+        if isinstance(name, str) and query_lower in name.lower()
+    ]
+    if len(matching_names) < 3:
+        all_names = [n for n in league.player_map.keys() if isinstance(n, str)]
+        fuzzy = difflib.get_close_matches(query, all_names, n=10, cutoff=0.5)
+        for name in fuzzy:
+            if name not in matching_names:
+                matching_names.append(name)
+
+    players = []
+    for name in matching_names[:10]:
+        try:
+            p = league.player_info(name=name)
+            if p is None:
+                continue
+            if isinstance(p, list):
+                players.extend(p)
+            else:
+                players.append(p)
+        except Exception:
+            continue
+
+    console.print(formatters.fmt_player_search(players[:10], query))
+
+
+@app.command()
+def scoreboard(
+    week: int = typer.Option(0, "--week", "-w", help="Matchup week (0=current)"),
+) -> None:
+    """Show matchup scoreboard with scores and winners."""
+    league = get_league()
+    matchup_period = week if week > 0 else None
+    try:
+        matchups = league.scoreboard(matchupPeriod=matchup_period)
+    except Exception as e:
+        console.print(f"No scoreboard data available: {e}")
+        raise typer.Exit(1)
+
+    if not matchups:
+        console.print("No matchups found for this week.")
+        return
+
+    display_week = week if week > 0 else league.currentMatchupPeriod
+    lines = [
+        f"## Scoreboard — Week {display_week}",
+        "",
+        "| Away | Score | Home | Score | Winner |",
+        "|------|-------|------|-------|--------|",
+    ]
+
+    for m in matchups:
+        home_name = m.home_team.team_name if hasattr(m.home_team, 'team_name') else str(m.home_team)
+        away_name = m.away_team.team_name if hasattr(m.away_team, 'team_name') else str(m.away_team)
+        home_live = getattr(m, 'home_team_live_score', None)
+        away_live = getattr(m, 'away_team_live_score', None)
+        if home_live is not None and away_live is not None:
+            h_score = f"{home_live:.1f}"
+            a_score = f"{away_live:.1f}"
+        else:
+            h_score = f"{m.home_final_score:.1f}" if m.home_final_score else "—"
+            a_score = f"{m.away_final_score:.1f}" if m.away_final_score else "—"
+        winner = getattr(m, 'winner', 'UNDECIDED')
+        if winner == "HOME":
+            winner_name = home_name
+        elif winner == "AWAY":
+            winner_name = away_name
+        else:
+            winner_name = "—"
+        lines.append(f"| {away_name} | {a_score} | {home_name} | {h_score} | {winner_name} |")
+
+    console.print("\n".join(lines))
+
+
 def main() -> None:
     app()

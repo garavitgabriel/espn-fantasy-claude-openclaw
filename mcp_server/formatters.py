@@ -524,3 +524,139 @@ def fmt_roster_needs(team, lineup_slot_counts):
     ]
 
     return "\n".join(lines)
+
+
+def fmt_schedule(team, current_week=None):
+    """Format a team's full season schedule."""
+    schedule = getattr(team, 'schedule', [])
+    if not schedule:
+        return f"No schedule data available for {team.team_name}."
+
+    lines = [
+        f"## Schedule — {team.team_name}",
+        "",
+        "| Week | Opponent | Result | Score |",
+        "|------|----------|--------|-------|",
+    ]
+
+    for i, matchup in enumerate(schedule):
+        week = i + 1
+        # Determine opponent and result
+        home = matchup.home_team
+        away = matchup.away_team
+        home_name = home.team_name if hasattr(home, 'team_name') else str(home)
+        away_name = away.team_name if hasattr(away, 'team_name') else str(away)
+
+        is_home = hasattr(home, 'team_id') and home.team_id == team.team_id
+        opponent = away_name if is_home else home_name
+
+        # Score
+        my_score = matchup.home_final_score if is_home else matchup.away_final_score
+        opp_score = matchup.away_final_score if is_home else matchup.home_final_score
+
+        # Live score if available
+        my_live = (matchup.home_team_live_score if is_home else matchup.away_team_live_score) if hasattr(matchup, 'home_team_live_score') else None
+        opp_live = (matchup.away_team_live_score if is_home else matchup.home_team_live_score) if hasattr(matchup, 'away_team_live_score') else None
+
+        marker = " **<<**" if current_week and week == current_week else ""
+
+        if my_live is not None and opp_live is not None and current_week and week == current_week:
+            result = "In Progress"
+            score = f"{my_live:.1f} - {opp_live:.1f}"
+        elif my_score and opp_score:
+            winner = getattr(matchup, 'winner', None)
+            if winner == "HOME" and is_home or winner == "AWAY" and not is_home:
+                result = "**W**"
+            elif winner == "HOME" and not is_home or winner == "AWAY" and is_home:
+                result = "L"
+            elif winner == "UNDECIDED":
+                result = "—"
+            else:
+                result = "—"
+            score = f"{my_score:.1f} - {opp_score:.1f}"
+        else:
+            result = "Upcoming"
+            score = "—"
+
+        lines.append(f"| {week}{marker} | {opponent} | {result} | {score} |")
+
+    return "\n".join(lines)
+
+
+def fmt_league_settings(settings):
+    """Format comprehensive league settings."""
+    lines = [
+        f"## League Settings — {settings.name}",
+        "",
+        "### Format",
+        f"- **Scoring type:** {settings.scoring_type or '—'}",
+        f"- **Teams:** {settings.team_count}",
+        f"- **Regular season weeks:** {settings.reg_season_count}",
+        f"- **Playoff teams:** {settings.playoff_team_count}",
+        f"- **Playoff matchup length:** {settings.playoff_matchup_period_length} week(s)",
+        f"- **Median scoring bonus:** {'Yes' if settings.median_scoring else 'No'}",
+        "",
+        "### Trades",
+        f"- **Veto votes required:** {settings.veto_votes_required}",
+    ]
+
+    if settings.trade_deadline:
+        from datetime import datetime
+        try:
+            deadline = datetime.fromtimestamp(settings.trade_deadline / 1000)
+            lines.append(f"- **Trade deadline:** {deadline.strftime('%b %d, %Y')}")
+        except (ValueError, OSError):
+            lines.append(f"- **Trade deadline:** {settings.trade_deadline}")
+    else:
+        lines.append("- **Trade deadline:** None set")
+
+    lines += [
+        "",
+        "### Acquisitions",
+        f"- **FAAB (auction budget for waivers):** {'Yes' if settings.faab else 'No'}",
+    ]
+    if settings.faab:
+        lines.append(f"- **FAAB budget:** ${settings.acquisition_budget}")
+
+    lines += [
+        "",
+        "### Tiebreakers",
+        f"- **Regular season tie rule:** {settings.tie_rule}",
+        f"- **Playoff tie rule:** {settings.playoff_tie_rule}",
+        f"- **Playoff seed tie rule:** {getattr(settings, 'playoff_seed_tie_rule', '—')}",
+    ]
+
+    if settings.keeper_count:
+        lines += [
+            "",
+            f"### Keepers: {settings.keeper_count} per team",
+        ]
+
+    division_map = getattr(settings, 'division_map', {})
+    if division_map:
+        lines += [
+            "",
+            "### Divisions",
+        ]
+        for div_id, div_name in division_map.items():
+            lines.append(f"- {div_name}")
+
+    return "\n".join(lines)
+
+
+def fmt_player_search(results, query):
+    """Format player search results."""
+    if not results:
+        return f"No players found matching '{query}'."
+
+    lines = [
+        f"## Search Results for '{query}' ({len(results)} matches)",
+        "",
+        "| Player | Pos | Team | Points | %Own |",
+        "|--------|-----|------|--------|------|",
+    ]
+    for p in results:
+        owned = _fmt_owned(p.percent_owned)
+        lines.append(f"| {p.name} | {p.position} | {p.proTeam} | {p.total_points} | {owned} |")
+
+    return "\n".join(lines)
