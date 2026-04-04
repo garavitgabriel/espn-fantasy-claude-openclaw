@@ -19,5 +19,6 @@ COPY mcp_server/ mcp_server/
 RUN uv sync --frozen --no-dev
 
 ENV MCP_TRANSPORT=sse
+ENV PYTHONUNBUFFERED=1
 
-CMD ["uv", "run", "espn-mcp"]
+CMD ["uv", "run", "--no-sync", "espn-mcp"]
