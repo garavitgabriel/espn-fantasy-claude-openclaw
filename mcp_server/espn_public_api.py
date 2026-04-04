@@ -10,6 +10,8 @@ import httpx
 PLAYER_BASE = "https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes"
 GAMES_BASE = "https://site.api.espn.com/apis/fantasy/v2/games/flb/games"
 SEARCH_BASE = "https://site.web.api.espn.com/apis/search/v2"
+FANTASY_BASE = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons"
+COMMS_BASE = "https://lm-api-communication.fantasy.espn.com/apis/v3/games/flb/seasons"
 
 DEFAULT_PARAMS = {"contentorigin": "espn", "lang": "en", "region": "us"}
 
@@ -76,6 +78,41 @@ def search_espn(query: str, limit: int = 10) -> dict:
     resp = _get_client().get(
         SEARCH_BASE,
         params={"query": query, "type": "player", "limit": str(limit), "page": "1"},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_batter_vs_team(athlete_id: int) -> dict:
+    """Get batter stats vs each MLB team."""
+    resp = _get_client().get(
+        f"{PLAYER_BASE}/{athlete_id}/vsathlete",
+        params=DEFAULT_PARAMS,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_pro_team_schedule(year: int, espn_s2: str, swid: str) -> dict:
+    """Get MLB pro team schedule — which teams play which days.
+
+    Requires auth cookies since this is the fantasy API.
+    """
+    resp = _get_client().get(
+        f"{FANTASY_BASE}/{year}",
+        params={"view": "proTeamSchedules_wl"},
+        cookies={"espn_s2": espn_s2, "SWID": swid},
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_league_chat(year: int, league_id: int, espn_s2: str, swid: str) -> dict:
+    """Get league message board / chat."""
+    resp = _get_client().get(
+        f"{COMMS_BASE}/{year}/segments/0/leagues/{league_id}/communication/",
+        params={"view": "kona_league_communication"},
+        cookies={"espn_s2": espn_s2, "SWID": swid},
     )
     resp.raise_for_status()
     return resp.json()

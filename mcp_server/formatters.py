@@ -813,3 +813,115 @@ def fmt_mlb_games(games_data: dict, date: str) -> str:
         lines.append(f"| {name} | {status} | {score} |")
 
     return "\n".join(lines)
+
+
+def fmt_batter_vs_team(data: dict, player_name: str) -> str:
+    """Format batter vs team stats from ESPN public API."""
+    lines = [f"## {player_name} — Batter vs Team", ""]
+
+    # Next game info
+    next_game = data.get("nextGame", {})
+    if next_game:
+        event = next_game.get("event", {})
+        if event:
+            lines.append(f"**Next game:** {event.get('name', '—')} ({event.get('date', '')[:10]})")
+            lines.append("")
+
+    # Stats vs each team
+    statistics = data.get("statistics", [])
+    if not statistics:
+        lines.append("No batter vs team data available.")
+        return "\n".join(lines)
+
+    for stat_group in statistics:
+        labels = stat_group.get("labels", [])
+        splits = stat_group.get("splits", [])
+        if not labels or not splits:
+            continue
+
+        display_labels = labels[:12]
+        lines.append("| Team | " + " | ".join(display_labels) + " |")
+        lines.append("|------|" + "|".join(["------"] * len(display_labels)) + "|")
+
+        for split in splits:
+            team_name = split.get("displayName", "—")
+            stats = split.get("stats", [])
+            vals = [str(v) if v is not None else "—" for v in stats[:12]]
+            while len(vals) < len(display_labels):
+                vals.append("—")
+            lines.append(f"| {team_name} | " + " | ".join(vals) + " |")
+
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def fmt_pro_schedule(data: dict, week: int | None = None) -> str:
+    """Format MLB pro team schedule from fantasy API."""
+    lines = ["## MLB Pro Team Schedule", ""]
+
+    # The response structure has settings.proTeams with schedule info
+    settings = data.get("settings", {})
+    pro_teams = settings.get("proTeams", [])
+
+    if not pro_teams:
+        # Try display structure
+        display = data.get("display", {})
+        if display:
+            lines.append("Schedule data found but format not yet parsed.")
+            return "\n".join(lines)
+        return "No pro team schedule data available."
+
+    lines.append("| Team | Games This Week |")
+    lines.append("|------|-----------------|")
+
+    for team in sorted(pro_teams, key=lambda t: t.get("abbrev", "")):
+        abbrev = team.get("abbrev", "—")
+        if abbrev == "FA":
+            continue  # Skip free agents
+        # Count games in the pro game schedule
+        schedule = team.get("proGamesByScoringPeriod", {})
+        if week and schedule:
+            games = schedule.get(str(week), [])
+            game_count = len(games)
+        else:
+            # Count all upcoming games
+            game_count = sum(len(g) for g in schedule.values()) if schedule else 0
+
+        bye = team.get("byeWeek", 0)
+        bye_note = f" (BYE week {bye})" if bye and week and bye == week else ""
+        lines.append(f"| {abbrev}{bye_note} | {game_count} |")
+
+    return "\n".join(lines)
+
+
+def fmt_league_chat(data: dict) -> str:
+    """Format league message board / chat."""
+    topics = data.get("topics", [])
+    if not topics:
+        return "No league messages found."
+
+    lines = ["## League Chat", ""]
+
+    for topic in topics[:15]:
+        author = topic.get("author", "—")
+        date = topic.get("date", "")
+        if isinstance(date, int):
+            from datetime import datetime
+            try:
+                date = datetime.fromtimestamp(date / 1000).strftime("%b %d %H:%M")
+            except (ValueError, OSError):
+                date = str(date)
+
+        messages = topic.get("messages", [])
+        first_msg = messages[0] if messages else {}
+        text = first_msg.get("message", first_msg.get("content", ""))
+        total = topic.get("totalMessageCount", len(messages))
+
+        if text:
+            preview = text[:150] + ("..." if len(text) > 150 else "")
+            lines.append(f"**{author}** ({date})" + (f" — {total} replies" if total > 1 else ""))
+            lines.append(f"> {preview}")
+            lines.append("")
+
+    return "\n".join(lines)

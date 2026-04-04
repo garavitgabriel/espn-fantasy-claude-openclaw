@@ -460,5 +460,55 @@ def mlb_games(
         raise typer.Exit(1)
 
 
+@app.command(name="vs-team")
+def vs_team(
+    name: str = typer.Argument(..., help="Batter's full name"),
+) -> None:
+    """Get a batter's stats vs each MLB team."""
+    from mcp_server import espn_public_api
+
+    league = get_league()
+    athlete_id = espn_public_api.resolve_athlete_id(league, name)
+    if not athlete_id:
+        console.print(f"Could not find ESPN athlete ID for '{name}'.")
+        raise typer.Exit(1)
+    try:
+        data = espn_public_api.get_batter_vs_team(athlete_id)
+        console.print(formatters.fmt_batter_vs_team(data, name))
+    except Exception as e:
+        console.print(f"Failed to fetch batter vs team: {e}")
+        raise typer.Exit(1)
+
+
+@app.command(name="pro-schedule")
+def pro_schedule(
+    week: int = typer.Option(0, "--week", "-w", help="Scoring period (0=overview)"),
+) -> None:
+    """Show MLB pro team schedule — games per team."""
+    from mcp_server import espn_public_api
+    from mcp_server.config import ESPN_S2, ESPN_SWID, ESPN_YEAR
+
+    try:
+        data = espn_public_api.get_pro_team_schedule(ESPN_YEAR, ESPN_S2, ESPN_SWID)
+        console.print(formatters.fmt_pro_schedule(data, week=week if week > 0 else None))
+    except Exception as e:
+        console.print(f"Failed to fetch pro schedule: {e}")
+        raise typer.Exit(1)
+
+
+@app.command()
+def chat() -> None:
+    """Show league message board / chat."""
+    from mcp_server import espn_public_api
+    from mcp_server.config import ESPN_S2, ESPN_SWID, ESPN_YEAR, ESPN_LEAGUE_ID
+
+    try:
+        data = espn_public_api.get_league_chat(ESPN_YEAR, ESPN_LEAGUE_ID, ESPN_S2, ESPN_SWID)
+        console.print(formatters.fmt_league_chat(data))
+    except Exception as e:
+        console.print(f"Failed to fetch league chat: {e}")
+        raise typer.Exit(1)
+
+
 def main() -> None:
     app()

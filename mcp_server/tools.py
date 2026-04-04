@@ -504,3 +504,55 @@ def register_tools(mcp: FastMCP):
             return formatters.fmt_mlb_games(data, date)
         except Exception as e:
             return f"Failed to fetch MLB games for {date}: {e}"
+
+    @mcp.tool()
+    def get_batter_vs_team(player_name: str) -> str:
+        """Get a batter's stats vs each MLB team (all 30 teams).
+
+        Shows batting performance broken down by opponent team — critical for
+        evaluating matchup-dependent hitters and planning weekly lineups.
+
+        Args:
+            player_name: Player's full name (e.g. "Freddie Freeman")
+        """
+        league = get_league()
+        athlete_id = espn_public_api.resolve_athlete_id(league, player_name)
+        if not athlete_id:
+            return f"Could not find ESPN athlete ID for '{player_name}'. Try the exact ESPN name."
+        try:
+            data = espn_public_api.get_batter_vs_team(athlete_id)
+            return formatters.fmt_batter_vs_team(data, player_name)
+        except Exception as e:
+            return f"Failed to fetch batter vs team for '{player_name}': {e}"
+
+    @mcp.tool()
+    def get_pro_schedule(week: int = 0) -> str:
+        """Get MLB pro team schedule — which teams play how many games.
+
+        Essential for streaming pitcher decisions: start pitchers whose teams
+        have more games, bench players on off-days.
+
+        Args:
+            week: Scoring period/week (0 = current overview)
+        """
+        from .config import ESPN_S2, ESPN_SWID, ESPN_YEAR
+
+        try:
+            data = espn_public_api.get_pro_team_schedule(ESPN_YEAR, ESPN_S2, ESPN_SWID)
+            return formatters.fmt_pro_schedule(data, week=week if week > 0 else None)
+        except Exception as e:
+            return f"Failed to fetch pro team schedule: {e}"
+
+    @mcp.tool()
+    def get_league_chat() -> str:
+        """Get the league message board — recent messages and trash talk.
+
+        Shows the latest 15 threads with author, date, and message preview.
+        """
+        from .config import ESPN_S2, ESPN_SWID, ESPN_YEAR, ESPN_LEAGUE_ID
+
+        try:
+            data = espn_public_api.get_league_chat(ESPN_YEAR, ESPN_LEAGUE_ID, ESPN_S2, ESPN_SWID)
+            return formatters.fmt_league_chat(data)
+        except Exception as e:
+            return f"Failed to fetch league chat: {e}"
