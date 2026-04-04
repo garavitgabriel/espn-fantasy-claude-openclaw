@@ -21,4 +21,5 @@ RUN uv sync --frozen --no-dev
 ENV MCP_TRANSPORT=sse
 ENV PYTHONUNBUFFERED=1
 
-CMD ["/app/.venv/bin/espn-mcp"]
+ENTRYPOINT ["/app/.venv/bin/python", "-m"]
+CMD ["mcp_server.server"]

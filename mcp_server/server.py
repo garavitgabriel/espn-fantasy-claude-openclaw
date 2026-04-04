@@ -45,6 +45,8 @@ register_resources(mcp)
 
 def run_server():
     """Start the MCP server with the configured transport."""
+    import sys
+    print(f"ESPN MCP server starting (transport={transport})", file=sys.stderr, flush=True)
     if transport in ("sse", "streamable-http", "http"):
         host = os.environ.get("MCP_HOST", "0.0.0.0")
         port = int(os.environ.get("PORT", os.environ.get("MCP_PORT", "8000")))
