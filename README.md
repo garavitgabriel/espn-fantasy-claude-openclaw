@@ -179,12 +179,59 @@ MCP_TRANSPORT=sse uv run espn-mcp
 
 ## Deploy to Railway
 
+The project includes a `Dockerfile` and `railway.json` for one-click deployment.
+
+### 1. Create the service
+
 1. Push to GitHub
-2. Create a Railway project > Deploy from GitHub
-3. Set environment variables: `ESPN_S2`, `ESPN_SWID`, `ESPN_LEAGUE_ID`, `ESPN_YEAR`, `ESPN_TEAM_NAME`, `MCP_TRANSPORT=sse`
-4. Railway builds via the Dockerfile and starts the server
-5. Your SSE endpoint: `https://your-app.up.railway.app/sse`
-6. Healthcheck: `https://your-app.up.railway.app/health`
+2. Go to [railway.com](https://railway.com) > New Project > Deploy from GitHub Repo
+3. Select your fork
+
+### 2. Set environment variables
+
+In the Railway dashboard, add these variables to your service:
+
+| Variable | Value |
+|---|---|
+| `ESPN_S2` | Your ESPN `espn_s2` cookie |
+| `ESPN_SWID` | Your ESPN `SWID` cookie (include `{}`curly braces) |
+| `ESPN_LEAGUE_ID` | Your league ID (default: `612122596`) |
+| `ESPN_YEAR` | Season year (default: `2026`) |
+| `ESPN_TEAM_NAME` | Partial match for your team name |
+
+> `MCP_TRANSPORT=sse` is already baked into the Dockerfile — no need to set it manually.
+
+### 3. Deploy
+
+Railway auto-builds from the Dockerfile. The `railway.json` configures:
+- **Build**: Dockerfile (uv + Python 3.12, layer-cached deps)
+- **Start command**: `/app/.venv/bin/python -m mcp_server.server` — uses the venv Python directly (required because Railway may override the Dockerfile CMD)
+- **Healthcheck**: `GET /health` with a 60s retry window
+- **Restart policy**: on failure, up to 3 retries
+
+### 4. Connect
+
+Once deployed, your endpoints are:
+
+| Endpoint | URL |
+|---|---|
+| **SSE** | `https://your-app.up.railway.app/sse` |
+| **Health** | `https://your-app.up.railway.app/health` |
+
+Use the SSE URL in Claude Desktop, Cowork, or any MCP client:
+
+```json
+{
+  "mcpServers": {
+    "espn-baseball": {
+      "type": "url",
+      "url": "https://your-app.up.railway.app/sse"
+    }
+  }
+}
+```
+
+> **Note**: The `startCommand` in `railway.json` is critical. Railway's Dockerfile builder may ignore the `CMD` instruction and use a dashboard-configured command instead. The explicit `startCommand` ensures the venv Python (with all dependencies) is always used.
 
 ## Development
 
