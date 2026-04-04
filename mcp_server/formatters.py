@@ -3,11 +3,32 @@
 from espn_api.baseball.constant import POSITION_MAP, STATS_MAP
 
 
+def _fmt_owned(percent_owned):
+    """Format percent owned, handling -1 (unknown) as —."""
+    if percent_owned is None or percent_owned < 0:
+        return "—"
+    return f"{percent_owned}%"
+
+
+def _fmt_started(percent_started):
+    """Format percent started, handling -1 (unknown) as —."""
+    if percent_started is None or percent_started < 0:
+        return "—"
+    return f"{percent_started}%"
+
+
+def _fmt_stat_value(val):
+    """Format a stat value for display."""
+    if isinstance(val, float):
+        return f"{val:.3f}" if abs(val) < 1 and val != 0 else f"{val:.1f}"
+    return str(val)
+
+
 def fmt_player(p, show_stats=True):
     """Format a single player as a table row."""
     slot = p.lineupSlot or p.position
     injury = f" ({p.injuryStatus})" if p.injuryStatus and p.injuryStatus != "ACTIVE" else ""
-    owned = f"{p.percent_owned}%" if p.percent_owned >= 0 else ""
+    owned = _fmt_owned(p.percent_owned)
     pts = p.total_points
 
     row = f"| {p.name}{injury} | {slot} | {p.proTeam} | {pts} | {owned} |"
@@ -70,8 +91,8 @@ def fmt_free_agents(players):
     ]
     for p in players:
         pos = p.position
-        owned = f"{p.percent_owned}%" if p.percent_owned >= 0 else ""
-        started = f"{p.percent_started}%" if p.percent_started >= 0 else ""
+        owned = _fmt_owned(p.percent_owned)
+        started = _fmt_started(p.percent_started)
         lines.append(f"| {p.name} | {pos} | {p.proTeam} | {p.total_points} | {owned} | {started} |")
     return "\n".join(lines)
 
@@ -88,46 +109,40 @@ def fmt_matchup_h2h_category(box_score):
         "",
     ]
 
-    # Check if we have category stats
-    if hasattr(box_score, 'home_stats') and box_score.home_stats:
-        lines.append(f"**Score: {away_name} {getattr(box_score, 'away_wins', '?')}-{getattr(box_score, 'home_wins', '?')}-{getattr(box_score, 'home_ties', '?')} {home_name}**")
-        lines.append("")
-        lines.append(f"| Category | {away_name} | {home_name} | Winner |")
-        lines.append("|----------|------------|------------|--------|")
-
-        home_stats = box_score.home_stats
-        away_stats = getattr(box_score, 'away_stats', {}) or {}
-
-        for cat in home_stats:
-            h_val = home_stats[cat]['value']
-            h_result = home_stats[cat]['result']
-            a_val = away_stats.get(cat, {}).get('value', '')
-            # Format nicely
-            if isinstance(h_val, float):
-                h_display = f"{h_val:.3f}" if h_val < 1 else f"{h_val:.2f}"
-            else:
-                h_display = str(h_val)
-            if isinstance(a_val, float):
-                a_display = f"{a_val:.3f}" if a_val < 1 else f"{a_val:.2f}"
-            else:
-                a_display = str(a_val)
-
-            if h_result == "WIN":
-                winner = home_name
-            elif h_result == "LOSS":
-                winner = away_name
-            else:
-                winner = "TIE"
-            lines.append(f"| {cat} | {a_display} | {h_display} | {winner} |")
-    else:
+    home_stats = getattr(box_score, 'home_stats', None)
+    if not home_stats:
         lines.append("No category data available for this matchup.")
+        return "\n".join(lines)
+
+    lines.append(f"**Score: {away_name} {getattr(box_score, 'away_wins', '?')}-{getattr(box_score, 'home_wins', '?')}-{getattr(box_score, 'home_ties', '?')} {home_name}**")
+    lines.append("")
+    lines.append(f"| Category | {away_name} | {home_name} | Winner |")
+    lines.append("|----------|------------|------------|--------|")
+
+    away_stats = getattr(box_score, 'away_stats', None) or {}
+
+    for cat in home_stats:
+        h_val = home_stats[cat]['value']
+        h_result = home_stats[cat]['result']
+        a_val = away_stats.get(cat, {}).get('value', '')
+        h_display = _fmt_stat_value(h_val)
+        a_display = _fmt_stat_value(a_val)
+
+        if h_result == "WIN":
+            winner = home_name
+        elif h_result == "LOSS":
+            winner = away_name
+        else:
+            winner = "TIE"
+        lines.append(f"| {cat} | {a_display} | {h_display} | {winner} |")
 
     return "\n".join(lines)
 
 
 def fmt_box_score(box_score):
     """Format any box score type."""
-    if hasattr(box_score, 'home_stats'):
+    home_stats = getattr(box_score, 'home_stats', None)
+    if home_stats:
         return fmt_matchup_h2h_category(box_score)
     # Fallback for points-based
     home = box_score.home_team
@@ -147,22 +162,33 @@ def fmt_activity(activities):
     ]
     for act in activities:
         for action in act.actions:
-            team_name = action[0].team_name if hasattr(action[0], 'team_name') else str(action[0])
-            action_type = action[1]
+            team_obj = action[0] if len(action) > 0 else None
+            team_name = team_obj.team_name if team_obj and hasattr(team_obj, 'team_name') else str(team_obj or "—")
+            action_type = action[1] if len(action) > 1 else "UNKNOWN"
             player_name = action[2] if len(action) > 2 else ""
             lines.append(f"| {act.date} | {action_type} | {player_name} | {team_name} |")
     return "\n".join(lines)
 
 
 def fmt_player_detail(player):
-    """Format detailed player info."""
+    """Format detailed player info with season stats, projections, and eligibility."""
+    eligible = ", ".join(
+        s for s in getattr(player, 'eligibleSlots', [])
+        if s not in ('BE', 'IL', 'IR', 'UTIL', 'IF')
+    )
+    acq = getattr(player, 'acquisitionType', None) or "—"
+
     lines = [
         f"## {player.name}",
         f"- **Position:** {player.position}",
+        f"- **Eligible slots:** {eligible or player.position}",
         f"- **Team:** {player.proTeam}",
         f"- **Injury:** {player.injuryStatus or 'Healthy'}",
-        f"- **% Owned:** {player.percent_owned}%",
+        f"- **% Owned:** {_fmt_owned(player.percent_owned)}",
+        f"- **% Started:** {_fmt_started(player.percent_started)}",
+        f"- **Acquired via:** {acq}",
         f"- **Total Points:** {player.total_points}",
+        f"- **Projected Points:** {getattr(player, 'projected_total_points', 0)}",
         "",
     ]
 
@@ -174,11 +200,17 @@ def fmt_player_detail(player):
         lines.append("| Stat | Value |")
         lines.append("|------|-------|")
         for stat, val in sorted(breakdown.items()):
-            if isinstance(val, float):
-                display = f"{val:.3f}" if abs(val) < 1 and val != 0 else f"{val:.1f}"
-            else:
-                display = str(val)
-            lines.append(f"| {stat} | {display} |")
+            lines.append(f"| {stat} | {_fmt_stat_value(val)} |")
+
+    # Projected stats
+    projected = season_stats.get('projected_breakdown', {})
+    if projected:
+        lines.append("")
+        lines.append("### Projected Stats")
+        lines.append("| Stat | Projected |")
+        lines.append("|------|-----------|")
+        for stat, val in sorted(projected.items()):
+            lines.append(f"| {stat} | {_fmt_stat_value(val)} |")
 
     return "\n".join(lines)
 
@@ -193,7 +225,9 @@ def fmt_compare(p1, p2):
         f"| Position | {p1.position} | {p2.position} |",
         f"| Team | {p1.proTeam} | {p2.proTeam} |",
         f"| Total Points | {p1.total_points} | {p2.total_points} |",
-        f"| % Owned | {p1.percent_owned}% | {p2.percent_owned}% |",
+        f"| Projected Points | {getattr(p1, 'projected_total_points', 0)} | {getattr(p2, 'projected_total_points', 0)} |",
+        f"| % Owned | {_fmt_owned(p1.percent_owned)} | {_fmt_owned(p2.percent_owned)} |",
+        f"| % Started | {_fmt_started(p1.percent_started)} | {_fmt_started(p2.percent_started)} |",
         f"| Injury | {p1.injuryStatus or 'Healthy'} | {p2.injuryStatus or 'Healthy'} |",
         "",
     ]
@@ -209,46 +243,80 @@ def fmt_compare(p1, p2):
         for stat in all_stats:
             v1 = s1.get(stat, "—")
             v2 = s2.get(stat, "—")
-            if isinstance(v1, float):
-                v1 = f"{v1:.3f}" if abs(v1) < 1 and v1 != 0 else f"{v1:.1f}"
-            if isinstance(v2, float):
-                v2 = f"{v2:.3f}" if abs(v2) < 1 and v2 != 0 else f"{v2:.1f}"
+            if v1 != "—":
+                v1 = _fmt_stat_value(v1)
+            if v2 != "—":
+                v2 = _fmt_stat_value(v2)
             lines.append(f"| {stat} | {v1} | {v2} |")
 
     return "\n".join(lines)
 
 
 def fmt_trade_analysis(give_list, recv_list):
-    """Format a trade evaluation table."""
+    """Format a trade evaluation with points AND category breakdown."""
     lines = [
         "## Trade Analysis",
         "",
         "### You Give",
-        "| Player | Pos | Team | Points | %Own |",
-        "|--------|-----|------|--------|------|",
+        "| Player | Pos | Team | Points | Projected | %Own |",
+        "|--------|-----|------|--------|-----------|------|",
     ]
     give_total = 0
+    give_proj = 0
     for p in give_list:
         give_total += p.total_points
-        lines.append(f"| {p.name} | {p.position} | {p.proTeam} | {p.total_points} | {p.percent_owned}% |")
+        proj = getattr(p, 'projected_total_points', 0)
+        give_proj += proj
+        lines.append(f"| {p.name} | {p.position} | {p.proTeam} | {p.total_points} | {proj} | {_fmt_owned(p.percent_owned)} |")
 
     lines += [
         "",
         "### You Receive",
-        "| Player | Pos | Team | Points | %Own |",
-        "|--------|-----|------|--------|------|",
+        "| Player | Pos | Team | Points | Projected | %Own |",
+        "|--------|-----|------|--------|-----------|------|",
     ]
     recv_total = 0
+    recv_proj = 0
     for p in recv_list:
         recv_total += p.total_points
-        lines.append(f"| {p.name} | {p.position} | {p.proTeam} | {p.total_points} | {p.percent_owned}% |")
+        proj = getattr(p, 'projected_total_points', 0)
+        recv_proj += proj
+        lines.append(f"| {p.name} | {p.position} | {p.proTeam} | {p.total_points} | {proj} | {_fmt_owned(p.percent_owned)} |")
 
     diff = recv_total - give_total
+    proj_diff = recv_proj - give_proj
     sign = "+" if diff >= 0 else ""
+    proj_sign = "+" if proj_diff >= 0 else ""
     lines += [
         "",
         f"**Points differential: {sign}{diff:.1f}** (receive - give)",
+        f"**Projected differential: {proj_sign}{proj_diff:.1f}** (receive - give)",
     ]
+
+    # Category-by-category comparison
+    give_cats = {}
+    recv_cats = {}
+    for p in give_list:
+        for stat, val in p.stats.get(0, {}).get('breakdown', {}).items():
+            give_cats[stat] = give_cats.get(stat, 0) + (val or 0)
+    for p in recv_list:
+        for stat, val in p.stats.get(0, {}).get('breakdown', {}).items():
+            recv_cats[stat] = recv_cats.get(stat, 0) + (val or 0)
+
+    all_cats = sorted(set(list(give_cats.keys()) + list(recv_cats.keys())))
+    if all_cats:
+        lines += [
+            "",
+            "### Category Impact",
+            "| Category | Give Total | Receive Total | Diff |",
+            "|----------|-----------|---------------|------|",
+        ]
+        for cat in all_cats:
+            g = give_cats.get(cat, 0)
+            r = recv_cats.get(cat, 0)
+            d = r - g
+            d_sign = "+" if d >= 0 else ""
+            lines.append(f"| {cat} | {_fmt_stat_value(g)} | {_fmt_stat_value(r)} | {d_sign}{_fmt_stat_value(d)} |")
 
     return "\n".join(lines)
 

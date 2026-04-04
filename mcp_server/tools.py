@@ -1,9 +1,35 @@
 """MCP tool definitions and handlers for ESPN Fantasy Baseball."""
 
+import difflib
+import logging
+
 from mcp.server.fastmcp import FastMCP
 
 from .config import get_league, get_my_team, get_my_team_error, resolve_team, describe_available_teams
 from . import formatters
+
+logger = logging.getLogger(__name__)
+
+
+def _resolve_player(league, name: str):
+    """Resolve a player by name, handling the list return case.
+
+    Returns (player, error_msg). On success error_msg is None.
+    On failure player is None and error_msg has suggestions.
+    """
+    result = league.player_info(name=name)
+    if result is None:
+        # Try fuzzy matching
+        all_names = list(league.player_map.keys())
+        close = difflib.get_close_matches(name, all_names, n=3, cutoff=0.6)
+        if close:
+            suggestions = ", ".join(f'"{n}"' for n in close)
+            return None, f"Player '{name}' not found. Did you mean: {suggestions}?"
+        return None, f"Player '{name}' not found. Try the exact ESPN name."
+    # player_info can return a list
+    if isinstance(result, list):
+        return result[0], None
+    return result, None
 
 
 def register_tools(mcp: FastMCP):
@@ -46,8 +72,8 @@ def register_tools(mcp: FastMCP):
         matchup_period = week if week > 0 else None
         try:
             box_scores = league.box_scores(matchup_period=matchup_period)
-        except (KeyError, TypeError):
-            return "No matchup data available yet (season may not have started)."
+        except Exception as e:
+            return f"No matchup data available: {e}"
 
         for bs in box_scores:
             home = bs.home_team
@@ -103,8 +129,8 @@ def register_tools(mcp: FastMCP):
         matchup_period = week if week > 0 else None
         try:
             box_scores = league.box_scores(matchup_period=matchup_period)
-        except (KeyError, TypeError):
-            return "No box score data available yet (season may not have started)."
+        except Exception as e:
+            return f"No box score data available: {e}"
         results = []
         for bs in box_scores:
             results.append(formatters.fmt_box_score(bs))
@@ -118,11 +144,9 @@ def register_tools(mcp: FastMCP):
             player_name: Player's full name (e.g. "Shohei Ohtani")
         """
         league = get_league()
-        player = league.player_info(name=player_name)
-        if player is None:
-            return f"Player '{player_name}' not found. Try the exact ESPN name."
-        if isinstance(player, list):
-            return "\n\n---\n\n".join(formatters.fmt_player_detail(p) for p in player)
+        player, error = _resolve_player(league, player_name)
+        if error:
+            return error
         return formatters.fmt_player_detail(player)
 
     @mcp.tool()
@@ -134,13 +158,12 @@ def register_tools(mcp: FastMCP):
             player2: Second player's full name
         """
         league = get_league()
-        p1 = league.player_info(name=player1)
-        p2 = league.player_info(name=player2)
+        p1, err1 = _resolve_player(league, player1)
+        p2, err2 = _resolve_player(league, player2)
 
-        if p1 is None:
-            return f"Player '{player1}' not found."
-        if p2 is None:
-            return f"Player '{player2}' not found."
+        errors = [e for e in (err1, err2) if e]
+        if errors:
+            return "\n".join(errors)
 
         return formatters.fmt_compare(p1, p2)
 
@@ -167,21 +190,21 @@ def register_tools(mcp: FastMCP):
         errors = []
 
         for name in give_names:
-            p = league.player_info(name=name)
-            if p is None:
-                errors.append(f"'{name}' not found")
+            p, err = _resolve_player(league, name)
+            if err:
+                errors.append(err)
             else:
                 give_list.append(p)
 
         for name in recv_names:
-            p = league.player_info(name=name)
-            if p is None:
-                errors.append(f"'{name}' not found")
+            p, err = _resolve_player(league, name)
+            if err:
+                errors.append(err)
             else:
                 recv_list.append(p)
 
         if errors:
-            return "Errors: " + "; ".join(errors)
+            return "\n".join(errors)
 
         return formatters.fmt_trade_analysis(give_list, recv_list)
 
@@ -240,11 +263,12 @@ def register_tools(mcp: FastMCP):
     @mcp.tool()
     def refresh_data() -> str:
         """Pull the latest data from ESPN. Use this to get updated stats/scores."""
-        from .config import _league_instance
         import mcp_server.config as cfg
 
-        league = get_league()
-        league.refresh()
-        # Update the cached instance reference
-        cfg._league_instance = league
-        return "League data refreshed successfully. Current week: " + str(league.current_week)
+        try:
+            league = get_league()
+            league.refresh()
+            cfg._league_instance = league
+            return f"League data refreshed successfully. Current week: {league.current_week}"
+        except Exception as e:
+            return f"Refresh failed: {e}. ESPN may be temporarily unavailable, or your credentials may have expired."
