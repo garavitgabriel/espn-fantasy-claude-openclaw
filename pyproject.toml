@@ -18,6 +18,9 @@ dependencies = [
 espn-mcp = "mcp_server.server:run_server"
 espn = "mcp_server.cli:main"
 
+[project.optional-dependencies]
+browser = ["playwright>=1.58.0"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

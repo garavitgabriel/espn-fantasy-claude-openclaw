@@ -10,7 +10,8 @@ Works with Claude Code, Claude Desktop, Claude Cowork, and OpenClaw.
 
 ```bash
 uv sync                              # Install dependencies
-uv run espn auth token <S2> <SWID>   # Set ESPN credentials
+uv run espn auth login               # Browser login (captures cookies)
+uv run espn auth token <S2> <SWID>   # Manual credential entry
 uv run espn standings                # CLI command
 uv run espn-mcp                      # Start MCP server (stdio)
 uv run pytest                        # Run tests
@@ -48,7 +49,7 @@ espn-api/
 - **Formatters are the single source of truth for output.** Both `tools.py` and `cli/` call functions in `formatters.py`. Never duplicate formatting logic.
 - **config.py owns the League instance.** Always use `get_league()` and `get_my_team()` — never instantiate League directly in tools or CLI.
 - **MCP tools and CLI commands are 1:1.** Every MCP tool has a matching CLI subcommand. When adding a new capability, add it to both.
-- **Credentials: env vars > config file > defaults.** `ConfigManager` loads from `~/.espn-fantasy/config.json`, then applies env var overrides. Users can set credentials via `espn auth token` or `.env`.
+- **Credentials: env vars > config file > defaults.** `ConfigManager` loads from `~/.espn-fantasy/config.json`, then applies env var overrides. Users can set credentials via `espn auth login` (browser), `espn auth token` (manual), or `.env`.
 - **The plugin wraps the MCP, never replaces it.** Skills orchestrate MCP tools via markdown instructions. The standalone MCP stays stateless.
 - **Memory is optional and plugin-only.** The SQLite memory server runs locally via stdio. It does NOT affect the standalone MCP. Skills degrade gracefully without memory.
 
@@ -101,7 +102,7 @@ The memory server (`memory/`) is a local SQLite-backed MCP server with 14 tools 
 
 ## Environment Variables
 
-Set via `espn auth token` (stored in `~/.espn-fantasy/config.json`) or `.env` (gitignored). Env vars always override the config file.
+Set via `espn auth login` (browser), `espn auth token` (manual), or `.env` (gitignored). Stored in `~/.espn-fantasy/config.json`. Env vars always override the config file.
 
 | Variable | Purpose |
 |----------|---------|

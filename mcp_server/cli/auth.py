@@ -1,13 +1,78 @@
 """CLI commands for ESPN authentication."""
 
+import asyncio
+
 import typer
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 
 from mcp_server.auth import ConfigManager
 
 app = typer.Typer()
 console = Console()
+
+
+@app.command()
+def login(
+    headless: bool = typer.Option(False, "--headless", help="Run browser in headless mode"),
+    league_id: int = typer.Option(612122596, "--league", "-l", help="ESPN league ID"),
+    year: int = typer.Option(2026, "--year", "-y", help="Season year"),
+    team_name: str = typer.Option("Gabriel", "--team", "-t", help="Your team name (partial match)"),
+) -> None:
+    """Log in to ESPN via browser. Cookies are captured automatically."""
+    from mcp_server.browser_auth import login_with_browser
+
+    def on_status(msg: str) -> None:
+        console.print(f"  [dim]{msg}[/dim]")
+
+    console.print(Panel(
+        "[bold]Browser Login[/bold]\n\n"
+        "A browser window will open to [cyan]espn.com/login[/cyan]\n"
+        "Log in with your ESPN account.\n"
+        "Your espn_s2 and SWID cookies will be captured automatically.\n\n"
+        "[dim]Timeout: 5 minutes[/dim]",
+        title="ESPN Auth",
+    ))
+
+    try:
+        creds = asyncio.run(login_with_browser(headless=headless, on_status=on_status))
+    except TimeoutError:
+        console.print("[red]Login timed out. Please try again.[/red]")
+        raise typer.Exit(1)
+    except RuntimeError as e:
+        console.print(f"[red]{e}[/red]")
+        console.print("\nTo install browser support: [bold]uv run playwright install chromium[/bold]")
+        console.print("Or use manual token: [bold]espn auth token <ESPN_S2> <ESPN_SWID>[/bold]")
+        raise typer.Exit(1)
+
+    # Save credentials
+    config_manager = ConfigManager()
+    config_manager.update(
+        espn_s2=creds.espn_s2,
+        espn_swid=creds.swid,
+        league_id=league_id,
+        year=year,
+        team_name=team_name,
+    )
+
+    # Verify
+    try:
+        import importlib
+        import mcp_server.config as cfg
+        importlib.reload(cfg)
+        league = cfg.get_league()
+        team = cfg.get_my_team(league)
+        team_info = f"Team: {team.team_name}" if team else "Team: (could not resolve)"
+        console.print(Panel(
+            f"[green]Logged in successfully![/green]\n"
+            f"League: {league.settings.name}\n"
+            f"{team_info}",
+            title="Authentication Successful",
+        ))
+    except Exception as e:
+        console.print(f"[yellow]Credentials saved but verification failed:[/yellow] {e}")
+        console.print("The credentials may still work — try [bold]espn auth status[/bold].")
 
 
 @app.command()

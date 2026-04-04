@@ -22,13 +22,29 @@ uv sync
 
 ### Authenticate
 
-Get your ESPN cookies: log in to [ESPN Fantasy](https://fantasy.espn.com) > DevTools > Application > Cookies > copy `espn_s2` and `SWID`.
+**Option A — Browser login (easiest):**
+
+```bash
+uv sync --extra browser              # first time only
+uv run playwright install chromium   # first time only
+uv run espn auth login
+```
+
+A browser opens, you log in to ESPN, and cookies are captured automatically.
+
+**Option B — Manual token:**
+
+Get your cookies from ESPN Fantasy > DevTools > Application > Cookies, then:
 
 ```bash
 uv run espn auth token <ESPN_S2> <ESPN_SWID>
 ```
 
-Or copy `.env.example` to `.env` and fill in the values.
+**Option C — `.env` file:**
+
+```bash
+cp .env.example .env   # edit with your values
+```
 
 ### Activate
 
@@ -74,7 +90,8 @@ uv run espn draft
 uv run espn needs
 
 # Auth
-uv run espn auth token <ESPN_S2> <ESPN_SWID>
+uv run espn auth login                        # browser login
+uv run espn auth token <ESPN_S2> <ESPN_SWID>  # manual token
 uv run espn auth status
 uv run espn auth logout
 
