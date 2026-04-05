@@ -749,50 +749,87 @@ def fmt_player_splits(splits_data: dict, player_name: str) -> str:
 
 
 def fmt_player_gamelog(gamelog_data: dict, player_name: str) -> str:
-    """Format player game log from ESPN public API."""
+    """Format player game log from ESPN public API.
+
+    Response structure: labels at top level, game data in
+    seasonTypes[0].categories[0].events (list of {eventId, stats}).
+    Event details (date, opponent) are in the top-level events dict keyed by eventId.
+    """
     lines = [f"## Game Log — {player_name}", ""]
 
-    categories = gamelog_data.get("categories", [])
-    if not categories:
-        # Try events directly
-        events = gamelog_data.get("events", {})
-        if not events:
-            return f"No game log data available for {player_name}."
+    # Labels are at top level
+    labels = gamelog_data.get("labels", [])
+    # Event metadata (date, opponent) is in top-level events dict
+    events_meta = gamelog_data.get("events", {})
+    if not isinstance(events_meta, dict):
+        events_meta = {}
 
-    # Process each category (batting/pitching)
-    for cat in categories:
-        cat_name = cat.get("displayName", "")
-        events = cat.get("events", [])
-        labels = cat.get("labels", [])
+    # Game stats are in seasonTypes[0].categories[0].events
+    season_types = gamelog_data.get("seasonTypes", [])
+    if not season_types:
+        return f"No game log data available for {player_name}."
 
-        if not events or not labels:
-            continue
+    for st in season_types:
+        st_name = st.get("displayName", "")
+        display_team = st.get("displayTeam", "")
+        if st_name:
+            lines.append(f"### {st_name}" + (f" ({display_team})" if display_team else ""))
+            lines.append("")
 
-        if cat_name:
-            lines.append(f"### {cat_name}")
+        categories = st.get("categories", [])
+        for cat in categories:
+            cat_name = cat.get("displayName", "")
+            cat_events = cat.get("events", [])
 
-        header = "| Date | Opponent | " + " | ".join(labels[:12]) + " |"
-        sep = "|------|----------|" + "|".join(["------"] * min(len(labels), 12)) + "|"
-        lines.append(header)
-        lines.append(sep)
+            if not cat_events:
+                continue
 
-        for event in events[:20]:  # Last 20 games
-            date = event.get("gameDate", "")[:10]
-            opponent = event.get("opponent", {}).get("abbreviation", "—")
-            stats = event.get("stats", [])
-            vals = [str(v) if v is not None else "—" for v in stats[:12]]
-            # Pad if needed
-            while len(vals) < min(len(labels), 12):
-                vals.append("—")
-            lines.append(f"| {date} | {opponent} | " + " | ".join(vals) + " |")
+            if cat_name:
+                lines.append(f"**{cat_name}**")
 
-        lines.append("")
+            display_labels = labels[:12] if labels else [f"S{i}" for i in range(len(cat_events[0].get("stats", [])))][:12]
+            header = "| Game | " + " | ".join(display_labels) + " |"
+            sep = "|------|" + "|".join(["------"] * len(display_labels)) + "|"
+            lines.append(header)
+            lines.append(sep)
+
+            for event in cat_events[:20]:
+                event_id = event.get("eventId", "")
+                stats = event.get("stats", [])
+                vals = [str(v) if v is not None else "—" for v in stats[:12]]
+                while len(vals) < len(display_labels):
+                    vals.append("—")
+
+                # Try to get game info from events metadata
+                meta = events_meta.get(str(event_id), {})
+                if isinstance(meta, dict):
+                    opp = meta.get("opponent", {})
+                    opp_abbrev = opp.get("abbreviation", "") if isinstance(opp, dict) else ""
+                    game_date = meta.get("gameDate", "")[:10]
+                    game_label = f"{game_date} vs {opp_abbrev}" if opp_abbrev else event_id
+                else:
+                    game_label = str(event_id)
+
+                lines.append(f"| {game_label} | " + " | ".join(vals) + " |")
+
+            # Totals
+            totals = cat.get("totals", [])
+            if totals:
+                vals = [str(v) if v is not None else "—" for v in totals[:12]]
+                while len(vals) < len(display_labels):
+                    vals.append("—")
+                lines.append(f"| **Totals** | " + " | ".join(vals) + " |")
+
+            lines.append("")
 
     return "\n".join(lines)
 
 
 def fmt_mlb_games(games_data: dict, date: str) -> str:
-    """Format MLB games for a specific date."""
+    """Format MLB games for a specific date.
+
+    Response has events[] with competitors[] (home/away teams with scores).
+    """
     events = games_data.get("events", [])
     if not events:
         return f"No MLB games found for {date}."
@@ -800,23 +837,48 @@ def fmt_mlb_games(games_data: dict, date: str) -> str:
     lines = [
         f"## MLB Games — {date[:4]}-{date[4:6]}-{date[6:]}",
         "",
-        "| Game | Status | Score/Time |",
-        "|------|--------|------------|",
+        "| Away | Score | Home | Score | Status |",
+        "|------|-------|------|-------|--------|",
     ]
 
     for event in events:
-        name = event.get("summary", event.get("name", "Unknown"))
-        status = event.get("status", "")
-        if isinstance(status, dict):
-            status = status.get("type", {}).get("shortDetail", "—")
-        score = event.get("lastPlay", {}).get("text", "") if event.get("lastPlay") else "—"
-        lines.append(f"| {name} | {status} | {score} |")
+        competitors = event.get("competitors", [])
+
+        away_name = "?"
+        away_score = "—"
+        home_name = "?"
+        home_score = "—"
+
+        for comp in competitors:
+            abbrev = comp.get("abbreviation", comp.get("name", "?"))
+            score = comp.get("score", "—")
+            if score is not None:
+                score = str(int(score)) if isinstance(score, float) and score == int(score) else str(score)
+            else:
+                score = "—"
+            if comp.get("homeAway") == "home":
+                home_name = abbrev
+                home_score = score
+            else:
+                away_name = abbrev
+                away_score = score
+
+        # Status
+        full_status = event.get("fullStatus", {})
+        status_type = full_status.get("type", {})
+        status = status_type.get("shortDetail", status_type.get("detail", event.get("summary", "—")))
+
+        lines.append(f"| {away_name} | {away_score} | {home_name} | {home_score} | {status} |")
 
     return "\n".join(lines)
 
 
 def fmt_batter_vs_team(data: dict, player_name: str) -> str:
-    """Format batter vs team stats from ESPN public API."""
+    """Format batter vs team stats from ESPN public API.
+
+    Response structure: statistics is a dict with 'labels', 'statistics' (list of pitcher matchups),
+    and 'displayName' (e.g. "career statistics vs. Washington Nationals pitchers").
+    """
     lines = [f"## {player_name} — Batter vs Team", ""]
 
     # Next game info
@@ -827,70 +889,110 @@ def fmt_batter_vs_team(data: dict, player_name: str) -> str:
             lines.append(f"**Next game:** {event.get('name', '—')} ({event.get('date', '')[:10]})")
             lines.append("")
 
-    # Stats vs each team
-    statistics = data.get("statistics", [])
-    if not statistics:
+    # statistics is a dict, not a list
+    stats_obj = data.get("statistics", {})
+    if not stats_obj or not isinstance(stats_obj, dict):
         lines.append("No batter vs team data available.")
         return "\n".join(lines)
 
-    for stat_group in statistics:
-        labels = stat_group.get("labels", [])
-        splits = stat_group.get("splits", [])
-        if not labels or not splits:
-            continue
-
-        display_labels = labels[:12]
-        lines.append("| Team | " + " | ".join(display_labels) + " |")
-        lines.append("|------|" + "|".join(["------"] * len(display_labels)) + "|")
-
-        for split in splits:
-            team_name = split.get("displayName", "—")
-            stats = split.get("stats", [])
-            vals = [str(v) if v is not None else "—" for v in stats[:12]]
-            while len(vals) < len(display_labels):
-                vals.append("—")
-            lines.append(f"| {team_name} | " + " | ".join(vals) + " |")
-
+    title = stats_obj.get("displayName", "")
+    if title:
+        lines.append(f"**{title}**")
         lines.append("")
+
+    labels = stats_obj.get("labels", [])
+    inner_stats = stats_obj.get("statistics", [])
+
+    if not labels or not inner_stats:
+        lines.append("No batter vs team data available.")
+        return "\n".join(lines)
+
+    display_labels = labels[:12]
+    lines.append("| Pitcher | " + " | ".join(display_labels) + " |")
+    lines.append("|---------|" + "|".join(["------"] * len(display_labels)) + "|")
+
+    for entry in inner_stats:
+        name = entry.get("displayName", "—") if isinstance(entry, dict) else str(entry)
+        stats = entry.get("stats", []) if isinstance(entry, dict) else []
+        vals = [str(v) if v is not None else "—" for v in stats[:12]]
+        while len(vals) < len(display_labels):
+            vals.append("—")
+        lines.append(f"| {name} | " + " | ".join(vals) + " |")
+
+    # Totals
+    totals = stats_obj.get("totals", [])
+    if totals:
+        vals = [str(v) if v is not None else "—" for v in totals[:12]]
+        while len(vals) < len(display_labels):
+            vals.append("—")
+        lines.append(f"| **Total** | " + " | ".join(vals) + " |")
 
     return "\n".join(lines)
 
 
 def fmt_pro_schedule(data: dict, week: int | None = None) -> str:
-    """Format MLB pro team schedule from fantasy API."""
+    """Format MLB pro team schedule from fantasy API.
+
+    proGamesByScoringPeriod is keyed by scoring period ID (day-level).
+    A fantasy "week" spans multiple scoring periods. We need to find which
+    scoring periods belong to the requested week.
+    """
     lines = ["## MLB Pro Team Schedule", ""]
 
-    # The response structure has settings.proTeams with schedule info
     settings = data.get("settings", {})
     pro_teams = settings.get("proTeams", [])
 
     if not pro_teams:
-        # Try display structure
-        display = data.get("display", {})
-        if display:
-            lines.append("Schedule data found but format not yet parsed.")
-            return "\n".join(lines)
         return "No pro team schedule data available."
 
-    lines.append("| Team | Games This Week |")
-    lines.append("|------|-----------------|")
+    # Determine scoring periods for the requested week
+    # Fantasy weeks map to ranges of scoring periods
+    # If week is specified, we need to figure out which scoringPeriodIds belong to it
+    # For now, use the current scoring period from the data
+    current_period = data.get("scoringPeriodId") or data.get("status", {}).get("currentScoringPeriod", {}).get("id")
 
-    for team in sorted(pro_teams, key=lambda t: t.get("abbrev", "")):
+    if week:
+        title = f"## MLB Pro Team Schedule — Week {week}"
+    elif current_period:
+        title = f"## MLB Pro Team Schedule — Scoring Period {current_period}"
+    else:
+        title = "## MLB Pro Team Schedule"
+    lines[0] = title
+
+    # Collect all scoring period IDs that have games, grouped by team
+    # To show "this week", we look at a 7-day window around current period
+    if current_period and not week:
+        # Show games for a 7-day window around current scoring period
+        period_range = set(range(current_period, current_period + 7))
+    elif week:
+        # Approximate: week N starts at period (week-1)*7 + first_period
+        # This is a rough heuristic — ESPN weeks don't always align to 7 days
+        period_range = set(range((week - 1) * 7 + 1, week * 7 + 1))
+    else:
+        period_range = None
+
+    lines.append("| Team | Games | Days Playing |")
+    lines.append("|------|-------|-------------|")
+
+    team_data = []
+    for team in pro_teams:
         abbrev = team.get("abbrev", "—")
-        if abbrev == "FA":
-            continue  # Skip free agents
-        # Count games in the pro game schedule
+        if abbrev == "FA" or not abbrev:
+            continue
         schedule = team.get("proGamesByScoringPeriod", {})
-        if week and schedule:
-            games = schedule.get(str(week), [])
-            game_count = len(games)
+        if period_range:
+            game_count = sum(1 for pid in period_range if str(int(pid)) in schedule and schedule[str(int(pid))])
+            days = sorted(int(pid) for pid in period_range if str(int(pid)) in schedule and schedule[str(int(pid))])
         else:
-            # Count all upcoming games
-            game_count = sum(len(g) for g in schedule.values()) if schedule else 0
+            game_count = len(schedule)
+            days = []
 
-        bye = team.get("byeWeek", 0)
-        bye_note = f" (BYE week {bye})" if bye and week and bye == week else ""
-        lines.append(f"| {abbrev}{bye_note} | {game_count} |")
+        team_data.append((abbrev, game_count, days))
+
+    # Sort by game count descending (most games = best streaming targets)
+    for abbrev, game_count, days in sorted(team_data, key=lambda x: -x[1]):
+        days_str = ", ".join(str(d) for d in days) if days else "—"
+        lines.append(f"| {abbrev} | {game_count} | {days_str} |")
 
     return "\n".join(lines)
 

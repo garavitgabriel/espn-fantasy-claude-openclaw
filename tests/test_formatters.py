@@ -293,10 +293,18 @@ class TestFmtPlayerSplits(TestCase):
 class TestFmtMlbGames(TestCase):
     def test_basic(self):
         data = {"events": [
-            {"summary": "NYY @ BOS", "status": {"type": {"shortDetail": "7:05 PM ET"}}, "lastPlay": None},
+            {
+                "competitors": [
+                    {"abbreviation": "STL", "homeAway": "away", "score": 6.0},
+                    {"abbreviation": "DET", "homeAway": "home", "score": 11.0},
+                ],
+                "fullStatus": {"type": {"shortDetail": "Final"}},
+                "summary": "Final",
+            },
         ]}
         result = fmt_mlb_games(data, "20260404")
-        self.assertIn("NYY @ BOS", result)
+        self.assertIn("STL", result)
+        self.assertIn("DET", result)
         self.assertIn("2026-04-04", result)
 
     def test_empty(self):
@@ -307,20 +315,23 @@ class TestFmtMlbGames(TestCase):
 class TestFmtBatterVsTeam(TestCase):
     def test_basic(self):
         data = {
-            "statistics": [{
+            "statistics": {
+                "displayName": "career statistics vs. NYY pitchers",
                 "labels": ["AB", "H", "HR", "AVG"],
-                "splits": [
-                    {"displayName": "vs NYY", "stats": [50, 15, 3, ".300"]},
-                    {"displayName": "vs BOS", "stats": [40, 10, 1, ".250"]},
+                "statistics": [
+                    {"displayName": "Gerrit Cole", "stats": ["10", "3", "1", ".300"]},
+                    {"displayName": "Nestor Cortes", "stats": ["8", "2", "0", ".250"]},
                 ],
-            }],
+                "totals": ["18", "5", "1", ".278"],
+            },
         }
         result = fmt_batter_vs_team(data, "Test Player")
-        self.assertIn("vs NYY", result)
-        self.assertIn("vs BOS", result)
+        self.assertIn("Gerrit Cole", result)
+        self.assertIn("Nestor Cortes", result)
+        self.assertIn("**Total**", result)
 
     def test_empty(self):
-        result = fmt_batter_vs_team({"statistics": []}, "Test")
+        result = fmt_batter_vs_team({"statistics": {}}, "Test")
         self.assertIn("No batter vs team data", result)
 
 
