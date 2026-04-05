@@ -930,49 +930,34 @@ def fmt_batter_vs_team(data: dict, player_name: str) -> str:
     return "\n".join(lines)
 
 
-def fmt_pro_schedule(data: dict, week: int | None = None) -> str:
-    """Format MLB pro team schedule from fantasy API.
+def fmt_pro_schedule(data: dict, current_scoring_period: int = 0, days: int = 7) -> str:
+    """Format MLB pro team schedule — games per team over the next N days.
 
     proGamesByScoringPeriod is keyed by scoring period ID (day-level).
-    A fantasy "week" spans multiple scoring periods. We need to find which
-    scoring periods belong to the requested week.
-    """
-    lines = ["## MLB Pro Team Schedule", ""]
+    We count games in a window starting from current_scoring_period.
 
+    Args:
+        data: Response from proTeamSchedules_wl API.
+        current_scoring_period: The current scoring period (day number in season).
+        days: How many days to look ahead (default 7).
+    """
     settings = data.get("settings", {})
     pro_teams = settings.get("proTeams", [])
 
     if not pro_teams:
         return "No pro team schedule data available."
 
-    # Determine scoring periods for the requested week
-    # Fantasy weeks map to ranges of scoring periods
-    # If week is specified, we need to figure out which scoringPeriodIds belong to it
-    # For now, use the current scoring period from the data
-    current_period = data.get("scoringPeriodId") or data.get("status", {}).get("currentScoringPeriod", {}).get("id")
+    if not current_scoring_period:
+        return "No current scoring period available. Call refresh_data first."
 
-    if week:
-        title = f"## MLB Pro Team Schedule — Week {week}"
-    elif current_period:
-        title = f"## MLB Pro Team Schedule — Scoring Period {current_period}"
-    else:
-        title = "## MLB Pro Team Schedule"
-    lines[0] = title
+    period_range = list(range(current_scoring_period, current_scoring_period + days))
 
-    # Collect all scoring period IDs that have games, grouped by team
-    # To show "this week", we look at a 7-day window around current period
-    if current_period and not week:
-        # Show games for a 7-day window around current scoring period
-        period_range = set(range(current_period, current_period + 7))
-    elif week:
-        # Approximate: week N starts at period (week-1)*7 + first_period
-        # This is a rough heuristic — ESPN weeks don't always align to 7 days
-        period_range = set(range((week - 1) * 7 + 1, week * 7 + 1))
-    else:
-        period_range = None
-
-    lines.append("| Team | Games | Days Playing |")
-    lines.append("|------|-------|-------------|")
+    lines = [
+        f"## MLB Schedule — Next {days} Days (periods {period_range[0]}-{period_range[-1]})",
+        "",
+        "| Team | Games | Off Days |",
+        "|------|-------|----------|",
+    ]
 
     team_data = []
     for team in pro_teams:
@@ -980,19 +965,13 @@ def fmt_pro_schedule(data: dict, week: int | None = None) -> str:
         if abbrev == "FA" or not abbrev:
             continue
         schedule = team.get("proGamesByScoringPeriod", {})
-        if period_range:
-            game_count = sum(1 for pid in period_range if str(int(pid)) in schedule and schedule[str(int(pid))])
-            days = sorted(int(pid) for pid in period_range if str(int(pid)) in schedule and schedule[str(int(pid))])
-        else:
-            game_count = len(schedule)
-            days = []
+        game_days = [p for p in period_range if schedule.get(str(p))]
+        off_days = days - len(game_days)
+        team_data.append((abbrev, len(game_days), off_days))
 
-        team_data.append((abbrev, game_count, days))
-
-    # Sort by game count descending (most games = best streaming targets)
-    for abbrev, game_count, days in sorted(team_data, key=lambda x: -x[1]):
-        days_str = ", ".join(str(d) for d in days) if days else "—"
-        lines.append(f"| {abbrev} | {game_count} | {days_str} |")
+    for abbrev, game_count, off_days in sorted(team_data, key=lambda x: -x[1]):
+        off_str = str(off_days) if off_days > 0 else "—"
+        lines.append(f"| {abbrev} | {game_count} | {off_str} |")
 
     return "\n".join(lines)
 

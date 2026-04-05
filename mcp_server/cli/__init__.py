@@ -482,15 +482,20 @@ def vs_team(
 
 @app.command(name="pro-schedule")
 def pro_schedule(
-    week: int = typer.Option(0, "--week", "-w", help="Scoring period (0=overview)"),
+    days: int = typer.Option(7, "--days", "-d", help="Days to look ahead (default 7)"),
 ) -> None:
-    """Show MLB pro team schedule — games per team."""
+    """Show MLB pro team schedule — games per team over the next N days."""
     from mcp_server import espn_public_api
     from mcp_server.config import ESPN_S2, ESPN_SWID, ESPN_YEAR
 
+    league = get_league()
     try:
         data = espn_public_api.get_pro_team_schedule(ESPN_YEAR, ESPN_S2, ESPN_SWID)
-        console.print(formatters.fmt_pro_schedule(data, week=week if week > 0 else None))
+        console.print(formatters.fmt_pro_schedule(
+            data,
+            current_scoring_period=league.scoringPeriodId,
+            days=days,
+        ))
     except Exception as e:
         console.print(f"Failed to fetch pro schedule: {e}")
         raise typer.Exit(1)

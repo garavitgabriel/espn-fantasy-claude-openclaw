@@ -526,20 +526,25 @@ def register_tools(mcp: FastMCP):
             return f"Failed to fetch batter vs team for '{player_name}': {e}"
 
     @mcp.tool()
-    def get_pro_schedule(week: int = 0) -> str:
-        """Get MLB pro team schedule — which teams play how many games.
+    def get_pro_schedule(days: int = 7) -> str:
+        """Get MLB pro team schedule — how many games each team plays over the next N days.
 
-        Essential for streaming pitcher decisions: start pitchers whose teams
-        have more games, bench players on off-days.
+        Essential for streaming pitcher decisions: target teams with 7+ games,
+        avoid teams with off days. Sorted by most games first.
 
         Args:
-            week: Scoring period/week (0 = current overview)
+            days: How many days to look ahead (default 7)
         """
         from .config import ESPN_S2, ESPN_SWID, ESPN_YEAR
 
+        league = get_league()
         try:
             data = espn_public_api.get_pro_team_schedule(ESPN_YEAR, ESPN_S2, ESPN_SWID)
-            return formatters.fmt_pro_schedule(data, week=week if week > 0 else None)
+            return formatters.fmt_pro_schedule(
+                data,
+                current_scoring_period=league.scoringPeriodId,
+                days=days,
+            )
         except Exception as e:
             return f"Failed to fetch pro team schedule: {e}"
 
