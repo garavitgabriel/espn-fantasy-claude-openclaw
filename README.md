@@ -6,6 +6,18 @@ Turn your H2H Categories league into a conversation. Scout opponents, find free 
 >
 > Claude checks your roster, identifies your weak categories, searches free agents at SS, compares them against your current player, and recommends a pickup that flips two categories in your matchup.
 
+### Claude Code
+
+<p align="center">
+  <img src="assets/demo-claude-code.gif" alt="Demo — Claude Code" width="700">
+</p>
+
+### OpenClaw
+
+<p align="center">
+  <img src="assets/demo-openclaw.gif" alt="Demo — OpenClaw" width="350">
+</p>
+
 ## What You Can Do
 
 ### Weekly Management

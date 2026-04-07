@@ -5,5 +5,11 @@
   "author": {
     "name": "Gabriel Garavit"
   },
-  "repository": "https://github.com/garavitgabriel/espn-api"
+  "repository": "https://github.com/garavitgabriel/espn-api",
+  "mcpServers": {
+    "espn-baseball": {
+      "command": "uv",
+      "args": ["run", "--project", "${CLAUDE_PLUGIN_ROOT}", "espn-mcp"]
+    }
+  }
 }
