@@ -184,7 +184,7 @@ class League(BaseLeague):
             matchup_id = matchup_period
 
         params = {
-            'view': ['mMatchupScore', 'mScoreboard'],
+            'view': ['mMatchupScore', 'mScoreboard', 'mBoxscore'],
             'scoringPeriodId': scoring_id
         }
 
@@ -193,8 +193,11 @@ class League(BaseLeague):
         data = self.espn_request.league_get(params=params, headers=headers)
         pro_schedule = self._get_pro_schedule(scoring_id)
 
+        # Pass scoring items so H2HCategoryBoxScore can recompute from roster data
+        scoring_items = self.settings._raw_scoring_settings.get('scoringItems', [])
+
         schedule = data['schedule']
-        box_data = [self._box_score_class(matchup, pro_schedule, self.year, scoring_id) for matchup in schedule]
+        box_data = [self._box_score_class(matchup, pro_schedule, self.year, scoring_id, scoring_items=scoring_items) for matchup in schedule]
 
         for team in self.teams:
             for matchup in box_data:

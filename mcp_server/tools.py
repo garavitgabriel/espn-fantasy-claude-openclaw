@@ -70,9 +70,17 @@ def register_tools(mcp: FastMCP):
         if not my_team:
             return get_my_team_error(league)
 
-        matchup_period = week if week > 0 else None
+        matchup_period = week if week > 0 else league.currentMatchupPeriod
+        scoring_period = league.scoringPeriodId
+        logger.info(
+            "get_matchup: matchup_period=%s, scoring_period=%s, current_week=%s",
+            matchup_period, scoring_period, league.current_week,
+        )
         try:
-            box_scores = league.box_scores(matchup_period=matchup_period)
+            box_scores = league.box_scores(
+                matchup_period=matchup_period,
+                scoring_period=scoring_period,
+            )
         except Exception as e:
             return f"No matchup data available: {e}"
 
@@ -263,14 +271,22 @@ def register_tools(mcp: FastMCP):
 
     @mcp.tool()
     def refresh_data() -> str:
-        """Pull the latest data from ESPN. Use this to get updated stats/scores."""
+        """Pull the latest data from ESPN. Use this to get updated stats/scores.
+
+        Forces a completely fresh League instance to avoid stale cached state.
+        """
         import mcp_server.config as cfg
 
         try:
+            # Force a fresh instance instead of reusing the cached one
+            cfg._league_instance = None
             league = get_league()
-            league.refresh()
-            cfg._league_instance = league
-            return f"League data refreshed successfully. Current week: {league.current_week}"
+            return (
+                f"League data refreshed successfully.\n"
+                f"- Matchup period: {league.currentMatchupPeriod}\n"
+                f"- Scoring period (day): {league.scoringPeriodId}\n"
+                f"- current_week: {league.current_week}"
+            )
         except Exception as e:
             return f"Refresh failed: {e}. ESPN may be temporarily unavailable, or your credentials may have expired."
 
