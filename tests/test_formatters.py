@@ -27,6 +27,9 @@ from mcp_server.formatters import (
     fmt_mlb_games,
     fmt_batter_vs_team,
     fmt_league_chat,
+    fmt_probable_pitchers,
+    fmt_weekly_moves,
+    fmt_sp_schedule,
 )
 
 
@@ -333,6 +336,131 @@ class TestFmtBatterVsTeam(TestCase):
     def test_empty(self):
         result = fmt_batter_vs_team({"statistics": {}}, "Test")
         self.assertIn("No batter vs team data", result)
+
+
+class TestFmtProbablePitchers(TestCase):
+    def test_basic(self):
+        data = {
+            "events": [
+                {
+                    "date": "2026-04-16T23:40:00Z",
+                    "status": {"type": {"state": "pre", "shortDetail": "7:40 PM ET"}},
+                    "competitions": [
+                        {
+                            "competitors": [
+                                {
+                                    "homeAway": "home",
+                                    "team": {"abbreviation": "SEA"},
+                                    "probables": [
+                                        {
+                                            "athlete": {
+                                                "displayName": "George Kirby",
+                                                "hand": {"abbreviation": "R"},
+                                            }
+                                        }
+                                    ],
+                                },
+                                {
+                                    "homeAway": "away",
+                                    "team": {"abbreviation": "TEX"},
+                                    "probables": [
+                                        {
+                                            "athlete": {
+                                                "displayName": "Nathan Eovaldi",
+                                                "hand": {"abbreviation": "R"},
+                                            }
+                                        }
+                                    ],
+                                },
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+        result = fmt_probable_pitchers(data, "20260416")
+        self.assertIn("George Kirby", result)
+        self.assertIn("Nathan Eovaldi", result)
+        self.assertIn("TEX @ SEA", result)
+
+    def test_empty(self):
+        result = fmt_probable_pitchers({"events": []}, "20260416")
+        self.assertIn("No MLB games", result)
+
+    def test_tbd_probable(self):
+        data = {
+            "events": [
+                {
+                    "date": "2026-04-16T23:40:00Z",
+                    "status": {"type": {"state": "pre"}},
+                    "competitions": [
+                        {
+                            "competitors": [
+                                {"homeAway": "home", "team": {"abbreviation": "SEA"}, "probables": []},
+                                {"homeAway": "away", "team": {"abbreviation": "TEX"}, "probables": []},
+                            ]
+                        }
+                    ],
+                }
+            ]
+        }
+        result = fmt_probable_pitchers(data, "20260416")
+        self.assertIn("TBD", result)
+
+
+class TestFmtWeeklyMoves(TestCase):
+    def test_with_limit(self):
+        result = fmt_weekly_moves("Rolling Bunts", 4, 2, 7)
+        self.assertIn("Rolling Bunts", result)
+        self.assertIn("**Moves used:** 2", result)
+        self.assertIn("**Move limit:** 7", result)
+        self.assertIn("**Moves remaining:** 5", result)
+
+    def test_unlimited(self):
+        result = fmt_weekly_moves("My Team", 1, 3, None)
+        self.assertIn("unlimited", result)
+        self.assertIn("**Moves remaining:** —", result)
+
+    def test_over_limit_clamps_to_zero(self):
+        result = fmt_weekly_moves("My Team", 2, 10, 7)
+        self.assertIn("**Moves remaining:** 0", result)
+
+
+class TestFmtSpSchedule(TestCase):
+    def test_with_next_game(self):
+        data = {
+            "nextGame": {
+                "event": {"name": "TEX @ SEA", "date": "2026-04-19T23:40Z"},
+                "week": {"text": "Week 4"},
+            },
+            "rotowire": {"blurb": "Kirby will start Saturday vs Texas."},
+        }
+        result = fmt_sp_schedule(data, "George Kirby")
+        self.assertIn("2026-04-19", result)
+        self.assertIn("TEX @ SEA", result)
+        self.assertIn("Week 4", result)
+        self.assertIn("Kirby will start", result)
+
+    def test_no_next_game(self):
+        result = fmt_sp_schedule({}, "George Kirby")
+        self.assertIn("No scheduled start", result)
+
+
+class TestFmtActivityDate(TestCase):
+    def test_epoch_ms_gets_formatted(self):
+        # 2026-04-01 00:00:00 UTC -> 1774922400000 (approx — test tolerant)
+        act = SimpleNamespace(
+            date=1774872000000,
+            actions=[(SimpleNamespace(team_name="Team A", team_id=1), "FA ADDED", "Player Z")],
+        )
+        result = fmt_activity([act])
+        # Should not contain the raw int — it should be formatted
+        self.assertNotIn("1774872000000", result)
+        self.assertIn("2026", result)
+
+    def test_title_suffix(self):
+        result = fmt_activity([], title_suffix="filtered: Rolling Bunts")
+        self.assertIn("filtered: Rolling Bunts", result)
 
 
 class TestFmtLeagueChat(TestCase):

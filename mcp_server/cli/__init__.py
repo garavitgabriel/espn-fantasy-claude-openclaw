@@ -101,11 +101,33 @@ def free_agents(
 @app.command()
 def activity(
     size: int = typer.Option(25, "--size", "-s", help="Number of transactions"),
+    team: str = typer.Option("", "--team", "-t", help="Filter to a team (partial match)"),
+    scoring_period: int = typer.Option(0, "--period", "-p", help="Filter to a matchup period (0=no filter)"),
 ) -> None:
     """Show recent league activity."""
+    from mcp_server.tools import _activity_matches
+
     league = get_league()
-    activities = league.recent_activity(size=size)
-    console.print("## Recent Activity\n\n" + formatters.fmt_activity(activities))
+    team_obj = None
+    if team:
+        team_obj = resolve_team(league, team)
+        if not team_obj:
+            console.print(f"Team '{team}' not found. Available: {describe_available_teams(league)}")
+            raise typer.Exit(1)
+
+    fetch_size = max(size, 200) if scoring_period > 0 or team_obj else size
+    activities = league.recent_activity(size=fetch_size)
+    filtered = [act for act in activities if _activity_matches(act, team_obj, scoring_period, league)]
+    if size and len(filtered) > size and not team_obj and scoring_period == 0:
+        filtered = filtered[:size]
+
+    header_bits = []
+    if team_obj:
+        header_bits.append(team_obj.team_name)
+    if scoring_period > 0:
+        header_bits.append(f"matchup period {scoring_period}")
+    suffix = f"filtered: {', '.join(header_bits)}" if header_bits else ""
+    console.print("## Recent Activity\n\n" + formatters.fmt_activity(filtered, title_suffix=suffix))
 
 
 @app.command(name="box-scores")
@@ -463,8 +485,9 @@ def mlb_games(
 @app.command(name="vs-team")
 def vs_team(
     name: str = typer.Argument(..., help="Batter's full name"),
+    opponent: str = typer.Option("", "--opponent", "-o", help="Team abbrev (e.g. SEA). Empty = auto-detect."),
 ) -> None:
-    """Get a batter's stats vs each MLB team."""
+    """Get a batter's stats vs a specific team's pitchers."""
     from mcp_server import espn_public_api
 
     league = get_league()
@@ -473,11 +496,106 @@ def vs_team(
         console.print(f"Could not find ESPN athlete ID for '{name}'.")
         raise typer.Exit(1)
     try:
-        data = espn_public_api.get_batter_vs_team(athlete_id)
-        console.print(formatters.fmt_batter_vs_team(data, name))
+        data = espn_public_api.get_batter_vs_team(athlete_id, opponent_team=opponent or None)
+        body = formatters.fmt_batter_vs_team(data, name)
+        if opponent:
+            display = (data.get("statistics", {}) or {}).get("displayName", "") or ""
+            if opponent.strip().upper() not in display.upper():
+                body = (
+                    f"> ⚠️ Requested team `{opponent}` but ESPN returned data for: "
+                    f"`{display or 'unknown'}`. Treat as auto-detected.\n\n"
+                ) + body
+        console.print(body)
     except Exception as e:
         console.print(f"Failed to fetch batter vs team: {e}")
         raise typer.Exit(1)
+
+
+@app.command(name="probable-pitchers")
+def probable_pitchers(
+    date: str = typer.Option("", "--date", "-d", help="Date in YYYYMMDD format (empty=today)"),
+) -> None:
+    """Show probable starting pitchers for all MLB games on a date."""
+    from mcp_server import espn_public_api
+
+    if not date:
+        from datetime import datetime
+        date = datetime.now().strftime("%Y%m%d")
+    try:
+        data = espn_public_api.get_mlb_scoreboard(date)
+        console.print(formatters.fmt_probable_pitchers(data, date))
+    except Exception as e:
+        console.print(f"Failed to fetch probable pitchers: {e}")
+        raise typer.Exit(1)
+
+
+@app.command(name="sp-schedule")
+def sp_schedule(
+    name: str = typer.Argument(..., help="Pitcher's full name"),
+) -> None:
+    """Show a pitcher's next scheduled start."""
+    from mcp_server import espn_public_api
+
+    league = get_league()
+    athlete_id = espn_public_api.resolve_athlete_id(league, name)
+    if not athlete_id:
+        console.print(f"Could not find ESPN athlete ID for '{name}'.")
+        raise typer.Exit(1)
+    try:
+        data = espn_public_api.get_player_overview(athlete_id)
+        console.print(formatters.fmt_sp_schedule(data, name))
+    except Exception as e:
+        console.print(f"Failed to fetch next start: {e}")
+        raise typer.Exit(1)
+
+
+@app.command(name="weekly-moves")
+def weekly_moves(
+    team: str = typer.Option("", "--team", "-t", help="Team name (default: my team)"),
+    scoring_period: int = typer.Option(0, "--period", "-p", help="Matchup period (0=current)"),
+) -> None:
+    """Show add/drop count for a team in a matchup period."""
+    from mcp_server.tools import _matchup_period_for_date
+
+    league = get_league()
+    if team:
+        t = resolve_team(league, team)
+        if not t:
+            console.print(f"Team '{team}' not found. Available: {describe_available_teams(league)}")
+            raise typer.Exit(1)
+    else:
+        t = get_my_team(league)
+        if not t:
+            console.print(get_my_team_error(league))
+            raise typer.Exit(1)
+
+    target_period = scoring_period if scoring_period > 0 else league.currentMatchupPeriod
+    activities = league.recent_activity(size=200)
+    moves_used = 0
+    move_actions = {"FA ADDED", "WAIVER ADDED", "DROPPED"}
+    for act in activities:
+        mp = _matchup_period_for_date(league, getattr(act, "date", None))
+        if mp != target_period:
+            continue
+        for action in act.actions:
+            team_obj = action[0] if action else None
+            if getattr(team_obj, "team_id", None) != t.team_id:
+                continue
+            action_type = action[1] if len(action) > 1 else ""
+            if action_type in move_actions:
+                moves_used += 1
+
+    raw_acq = {}
+    try:
+        data = league.espn_request.get_league()
+        raw_acq = data.get("settings", {}).get("acquisitionSettings", {}) or {}
+    except Exception:
+        raw_acq = {}
+    move_limit = raw_acq.get("matchupAcquisitionLimit") or raw_acq.get("acquisitionLimitPerMatchup")
+    if not isinstance(move_limit, int) or move_limit <= 0:
+        move_limit = None
+
+    console.print(formatters.fmt_weekly_moves(t.team_name, target_period, moves_used, move_limit))
 
 
 @app.command(name="pro-schedule")

@@ -146,6 +146,11 @@ Set via `espn auth login` (browser), `espn auth token` (manual), or `.env` (giti
 | `search_player` | `search` | `fmt_player_search` |
 | `get_scoreboard` | `scoreboard` | *(none)* |
 | `refresh_data` | `refresh` | *(none — returns status string)* |
+| `get_probable_pitchers` | `probable-pitchers` | `fmt_probable_pitchers` |
+| `get_sp_schedule` | `sp-schedule` | `fmt_sp_schedule` |
+| `get_weekly_moves` | `weekly-moves` | `fmt_weekly_moves` |
+| `get_batter_vs_team` (accepts `opponent_team`) | `vs-team --opponent` | `fmt_batter_vs_team` |
+| `get_recent_activity` (accepts `team_name`, `scoring_period`) | `activity --team --period` | `fmt_activity` |
 
 ## Adding a New Tool
 

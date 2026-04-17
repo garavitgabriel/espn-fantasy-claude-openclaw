@@ -9,6 +9,7 @@ import httpx
 
 PLAYER_BASE = "https://site.web.api.espn.com/apis/common/v3/sports/baseball/mlb/athletes"
 GAMES_BASE = "https://site.api.espn.com/apis/fantasy/v2/games/flb/games"
+MLB_SCOREBOARD_BASE = "https://site.api.espn.com/apis/site/v2/sports/baseball/mlb/scoreboard"
 SEARCH_BASE = "https://site.web.api.espn.com/apis/search/v2"
 FANTASY_BASE = "https://lm-api-reads.fantasy.espn.com/apis/v3/games/flb/seasons"
 COMMS_BASE = "https://lm-api-communication.fantasy.espn.com/apis/v3/games/flb/seasons"
@@ -83,11 +84,33 @@ def search_espn(query: str, limit: int = 10) -> dict:
     return resp.json()
 
 
-def get_batter_vs_team(athlete_id: int) -> dict:
-    """Get batter stats vs each MLB team."""
+def get_batter_vs_team(athlete_id: int, opponent_team: str | None = None) -> dict:
+    """Get batter stats vs a specific team's pitchers.
+
+    Without opponent_team, ESPN auto-picks the team from the batter's next game.
+    With opponent_team (team abbrev or team id), attempts to scope to that team.
+    """
+    params = {**DEFAULT_PARAMS}
+    if opponent_team:
+        params["team"] = str(opponent_team)
     resp = _get_client().get(
         f"{PLAYER_BASE}/{athlete_id}/vsathlete",
-        params=DEFAULT_PARAMS,
+        params=params,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def get_mlb_scoreboard(date: str) -> dict:
+    """Get full MLB scoreboard for a date with probable pitchers.
+
+    Uses the standard MLB scoreboard endpoint (not the fantasy games endpoint).
+    Each event's competitors[].probables[] holds starting pitcher info.
+    Date format: YYYYMMDD.
+    """
+    resp = _get_client().get(
+        MLB_SCOREBOARD_BASE,
+        params={"dates": date},
     )
     resp.raise_for_status()
     return resp.json()

@@ -12,6 +12,79 @@ from . import espn_public_api
 logger = logging.getLogger(__name__)
 
 
+def _matchup_period_for_date(league, epoch_ms) -> int | None:
+    """Map an activity timestamp (epoch ms) to a matchup period id.
+
+    ESPN's matchup_periods maps '{matchup_period}' -> [scoring_period_ids].
+    Scoring periods in MLB are day numbers starting at 1 on opening day, so
+    we compute the activity's day number relative to the league start and
+    return whichever matchup period contains it.
+    """
+    if not isinstance(epoch_ms, (int, float)) or epoch_ms <= 0:
+        return None
+    try:
+        matchup_periods = league.settings.matchup_periods or {}
+    except AttributeError:
+        return None
+    if not matchup_periods:
+        return None
+
+    from datetime import datetime, timezone
+    try:
+        act_date = datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc).date()
+    except (ValueError, OSError, OverflowError):
+        return None
+
+    # Opening day lives in the raw schedule settings as scoringPeriodStartDate
+    # when available; otherwise derive from season year (default April 1).
+    raw_schedule = getattr(league.settings, "_raw_schedule_settings", {}) or {}
+    start_ms = raw_schedule.get("scoringPeriodStartDate")
+    if isinstance(start_ms, (int, float)) and start_ms > 0:
+        try:
+            start_date = datetime.fromtimestamp(start_ms / 1000, tz=timezone.utc).date()
+        except (ValueError, OSError, OverflowError):
+            start_date = None
+    else:
+        start_date = None
+
+    if start_date is None:
+        year = getattr(league, "year", act_date.year)
+        from datetime import date as _date
+        start_date = _date(year, 3, 15)  # season opens late March; conservative bound
+
+    scoring_period = (act_date - start_date).days + 1
+    if scoring_period < 1:
+        return None
+
+    for mp_id, period_ids in matchup_periods.items():
+        if scoring_period in period_ids:
+            try:
+                return int(mp_id)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+def _activity_matches(act, team_filter, matchup_period: int, league) -> bool:
+    """Return True if an activity passes optional team + matchup period filters."""
+    if team_filter is not None:
+        team_ids = set()
+        for action in getattr(act, "actions", []):
+            team_obj = action[0] if action else None
+            tid = getattr(team_obj, "team_id", None)
+            if tid is not None:
+                team_ids.add(tid)
+        if team_filter.team_id not in team_ids:
+            return False
+
+    if matchup_period and matchup_period > 0:
+        mp = _matchup_period_for_date(league, getattr(act, "date", None))
+        if mp != matchup_period:
+            return False
+
+    return True
+
+
 def _resolve_player(league, name: str):
     """Resolve a player by name, handling the list return case.
 
@@ -117,15 +190,49 @@ def register_tools(mcp: FastMCP):
         return header + formatters.fmt_free_agents(players)
 
     @mcp.tool()
-    def get_recent_activity(size: int = 25) -> str:
+    def get_recent_activity(
+        size: int = 25,
+        team_name: str = "",
+        scoring_period: int = 0,
+    ) -> str:
         """Get recent league transactions (adds, drops, trades).
 
         Args:
-            size: Number of transactions to return (default 25)
+            size: Number of transactions to fetch from ESPN (default 25)
+            team_name: Filter to activity involving this team (partial match). Empty = all teams.
+            scoring_period: Filter to activity in this matchup period. 0 = no filter.
+                Use league's currentMatchupPeriod value, not a day-number.
         """
         league = get_league()
-        activities = league.recent_activity(size=size)
-        return "## Recent Activity\n\n" + formatters.fmt_activity(activities)
+        team_filter = None
+        if team_name:
+            team_filter = resolve_team(league, team_name)
+            if not team_filter:
+                return (
+                    f"Team '{team_name}' not found. "
+                    f"Available teams: {describe_available_teams(league)}"
+                )
+
+        fetch_size = max(size, 200) if scoring_period > 0 or team_filter else size
+        activities = league.recent_activity(size=fetch_size)
+
+        filtered = [
+            act for act in activities
+            if _activity_matches(act, team_filter, scoring_period, league)
+        ]
+
+        if size and len(filtered) > size and not team_filter and scoring_period == 0:
+            filtered = filtered[:size]
+
+        header_bits = []
+        if team_filter:
+            header_bits.append(team_filter.team_name)
+        if scoring_period > 0:
+            header_bits.append(f"matchup period {scoring_period}")
+        suffix = f"filtered: {', '.join(header_bits)}" if header_bits else ""
+
+        body = formatters.fmt_activity(filtered, title_suffix=suffix)
+        return "## Recent Activity\n\n" + body
 
     @mcp.tool()
     def get_box_scores(week: int = 0) -> str:
@@ -522,24 +629,143 @@ def register_tools(mcp: FastMCP):
             return f"Failed to fetch MLB games for {date}: {e}"
 
     @mcp.tool()
-    def get_batter_vs_team(player_name: str) -> str:
-        """Get a batter's stats vs each MLB team (all 30 teams).
+    def get_batter_vs_team(player_name: str, opponent_team: str = "") -> str:
+        """Get a batter's stats vs a specific team's pitchers.
 
-        Shows batting performance broken down by opponent team — critical for
-        evaluating matchup-dependent hitters and planning weekly lineups.
+        Without opponent_team, ESPN auto-detects the team from the batter's next
+        scheduled game — which is unreliable when planning lineups for a specific
+        matchup. Pass an explicit team abbreviation (e.g. "SEA", "TEX") to scope
+        the stats to that team's pitchers.
+
+        The response is verified: if ESPN returns data for a different team than
+        requested, a warning is prepended so callers can fall back accordingly.
 
         Args:
             player_name: Player's full name (e.g. "Freddie Freeman")
+            opponent_team: Team abbreviation or id (e.g. "SEA"). Empty = auto-detect.
         """
         league = get_league()
         athlete_id = espn_public_api.resolve_athlete_id(league, player_name)
         if not athlete_id:
             return f"Could not find ESPN athlete ID for '{player_name}'. Try the exact ESPN name."
         try:
-            data = espn_public_api.get_batter_vs_team(athlete_id)
-            return formatters.fmt_batter_vs_team(data, player_name)
+            data = espn_public_api.get_batter_vs_team(
+                athlete_id,
+                opponent_team=opponent_team or None,
+            )
         except Exception as e:
             return f"Failed to fetch batter vs team for '{player_name}': {e}"
+
+        body = formatters.fmt_batter_vs_team(data, player_name)
+
+        if opponent_team:
+            display = (data.get("statistics", {}) or {}).get("displayName", "") or ""
+            requested = opponent_team.strip().upper()
+            # Warn when the returned display text doesn't mention the requested team.
+            if requested and requested not in display.upper():
+                warning = (
+                    f"> ⚠️ Requested team `{opponent_team}` but ESPN returned data for: "
+                    f"`{display or 'unknown'}`. ESPN's vsathlete endpoint may not support "
+                    f"explicit team scoping for this player — treat these stats as "
+                    f"auto-detected, not the matchup you asked for.\n\n"
+                )
+                body = warning + body
+
+        return body
+
+    @mcp.tool()
+    def get_probable_pitchers(date: str = "") -> str:
+        """Get probable starting pitchers for all MLB games on a date.
+
+        Pulls from ESPN's MLB scoreboard API. Each row shows the matchup,
+        game time, and each team's probable starter with handedness (L/R).
+
+        Args:
+            date: Date in YYYYMMDD format (empty = today)
+        """
+        if not date:
+            from datetime import datetime
+            date = datetime.now().strftime("%Y%m%d")
+        try:
+            data = espn_public_api.get_mlb_scoreboard(date)
+            return formatters.fmt_probable_pitchers(data, date)
+        except Exception as e:
+            return f"Failed to fetch probable pitchers for {date}: {e}"
+
+    @mcp.tool()
+    def get_sp_schedule(player_name: str) -> str:
+        """Get a starting pitcher's next scheduled start.
+
+        Returns the next game date and matchup for a pitcher, so callers know
+        whether to start them today without computing rotation math from a game log.
+
+        Args:
+            player_name: Pitcher's full name (e.g. "George Kirby")
+        """
+        league = get_league()
+        athlete_id = espn_public_api.resolve_athlete_id(league, player_name)
+        if not athlete_id:
+            return f"Could not find ESPN athlete ID for '{player_name}'. Try the exact ESPN name."
+        try:
+            data = espn_public_api.get_player_overview(athlete_id)
+            return formatters.fmt_sp_schedule(data, player_name)
+        except Exception as e:
+            return f"Failed to fetch next start for '{player_name}': {e}"
+
+    @mcp.tool()
+    def get_weekly_moves(team_name: str = "", scoring_period: int = 0) -> str:
+        """Count a team's add/drop transactions in a matchup period.
+
+        Returns moves used, the per-period limit (from league settings), and
+        moves remaining. Defaults to my team and the current matchup period.
+
+        Args:
+            team_name: Team name (partial match). Empty = my team.
+            scoring_period: Matchup period to count against. 0 = current period.
+        """
+        league = get_league()
+        if team_name:
+            team = resolve_team(league, team_name)
+            if not team:
+                return (
+                    f"Team '{team_name}' not found. "
+                    f"Available teams: {describe_available_teams(league)}"
+                )
+        else:
+            team = get_my_team(league)
+            if not team:
+                return get_my_team_error(league)
+
+        target_period = scoring_period if scoring_period > 0 else league.currentMatchupPeriod
+
+        # Fetch a generous window so we capture everything in the week
+        activities = league.recent_activity(size=200)
+        moves_used = 0
+        move_actions = {"FA ADDED", "WAIVER ADDED", "DROPPED"}
+        for act in activities:
+            mp = _matchup_period_for_date(league, getattr(act, "date", None))
+            if mp != target_period:
+                continue
+            for action in act.actions:
+                team_obj = action[0] if action else None
+                if getattr(team_obj, "team_id", None) != team.team_id:
+                    continue
+                action_type = action[1] if len(action) > 1 else ""
+                if action_type in move_actions:
+                    moves_used += 1
+
+        # Pull per-period acquisition limit from raw league settings
+        raw_acq = {}
+        try:
+            data = league.espn_request.get_league()
+            raw_acq = data.get("settings", {}).get("acquisitionSettings", {}) or {}
+        except Exception:
+            raw_acq = {}
+        move_limit = raw_acq.get("matchupAcquisitionLimit") or raw_acq.get("acquisitionLimitPerMatchup")
+        if not isinstance(move_limit, int) or move_limit <= 0:
+            move_limit = None
+
+        return formatters.fmt_weekly_moves(team.team_name, target_period, moves_used, move_limit)
 
     @mcp.tool()
     def get_pro_schedule(days: int = 7) -> str:

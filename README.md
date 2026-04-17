@@ -75,7 +75,7 @@ Memory is powered by a local SQLite database (`~/.espn-fantasy/memory.db`) with 
 
 Two MCP servers working together:
 
-**ESPN Fantasy MCP** (20 tools + 5 resources) — Connects to ESPN's API for live league data: rosters, standings, matchups, free agents, player stats, trades, draft board, and scoring categories. Deployed on Railway via SSE or runs locally via stdio.
+**ESPN Fantasy MCP** (30 tools + 5 resources) — Connects to ESPN's API for live league data: rosters, standings, matchups, free agents, player stats, trades, draft board, scoring categories, probable pitchers, and transaction counts. Deployed on Railway via SSE or runs locally via stdio.
 
 **Memory MCP** (14 tools) — Local SQLite server that persists matchup results, roster moves, category assessments, watchlist, draft picks, and user preferences across sessions. Runs locally via stdio.
 
@@ -204,6 +204,13 @@ uv run espn settings
 uv run espn search "Ohtani"
 uv run espn scoreboard --week 5
 
+# Daily lineup decisions
+uv run espn probable-pitchers                      # today's MLB starters with handedness
+uv run espn sp-schedule "George Kirby"             # next scheduled start
+uv run espn vs-team "Freddie Freeman" --opponent SEA  # BvP vs a specific team
+uv run espn weekly-moves                           # add/drop count in the current period
+uv run espn activity --team "Rolling Bunts" --period 4  # filter league activity
+
 # Draft day
 uv run espn scoring
 uv run espn slots
@@ -223,7 +230,7 @@ uv run espn build-plugin build --target claude --url https://your-app.up.railway
 uv run espn --help
 ```
 
-## MCP Tools (20)
+## MCP Tools (30)
 
 <details>
 <summary>ESPN Fantasy MCP — live league data</summary>
@@ -235,7 +242,7 @@ uv run espn --help
 | `get_matchup` | Current or specific week matchup with H2H category breakdown |
 | `get_standings` | League standings sorted by rank |
 | `get_free_agents` | Best available players, filterable by position |
-| `get_recent_activity` | Recent adds, drops, and trades |
+| `get_recent_activity` | Recent adds, drops, and trades. Optional `team_name` and `scoring_period` filters |
 | `get_box_scores` | All matchup scores for a week |
 | `get_player_info` | Detailed stats for any player |
 | `compare_players` | Side-by-side player comparison |
@@ -250,6 +257,16 @@ uv run espn --help
 | `search_player` | Fuzzy player search by partial name |
 | `get_scoreboard` | Lightweight matchup view with live scores and winners |
 | `refresh_data` | Pull latest data from ESPN |
+| `get_player_news` | Latest news, injury blurbs, and next game (via ESPN public API) |
+| `get_player_splits` | Splits vs LHP/RHP, home/away, by month, by count |
+| `get_player_gamelog` | Last 20 games with full stat lines |
+| `get_mlb_games` | MLB games with scores and status for a given date |
+| `get_batter_vs_team` | Batter's stats vs a specific team's pitchers (accepts explicit `opponent_team`) |
+| `get_pro_schedule` | Games-per-team over the next N days — for streaming decisions |
+| `get_league_chat` | League message board / trash talk |
+| `get_probable_pitchers` | Probable starters for all MLB games on a date, with handedness (L/R) |
+| `get_sp_schedule` | A pitcher's next scheduled start — no rotation math required |
+| `get_weekly_moves` | Add/drop count for a team in a matchup period, with remaining moves |
 </details>
 
 <details>
@@ -360,14 +377,15 @@ espn-api/
 │   └── repos.py           # Repository pattern for each table
 ├── espn_api/              # Upstream ESPN Fantasy API library
 ├── mcp_server/            # ESPN MCP server + CLI
-│   ├── server.py          # FastMCP server (20 tools + 5 resources)
+│   ├── server.py          # FastMCP server (30 tools + 5 resources)
 │   ├── tools.py           # Tool definitions
 │   ├── resources.py       # MCP resource definitions (workflow playbooks)
-│   ├── formatters.py      # Shared markdown formatters (14 fmt_* functions)
+│   ├── formatters.py      # Shared markdown formatters
 │   ├── config.py          # League singleton + credential loading
 │   ├── auth.py            # ConfigManager (~/.espn-fantasy/config.json)
 │   ├── browser_auth.py    # Playwright-based ESPN login
-│   └── cli/               # Typer CLI (22 commands)
+│   ├── espn_public_api.py # ESPN public API client (player, MLB scoreboard)
+│   └── cli/               # Typer CLI (mirrors every MCP tool)
 ├── pyproject.toml         # uv/hatchling package config
 ├── Dockerfile             # Production container (Railway-ready)
 └── install-openclaw.sh    # OpenClaw one-command installer

@@ -154,20 +154,34 @@ def fmt_box_score(box_score):
     return f"**{away_name}** {away_score} - {home_score} **{home_name}**"
 
 
-def fmt_activity(activities):
-    """Format recent activity."""
+def fmt_activity(activities, title_suffix: str = ""):
+    """Format recent activity. Accepts pre-filtered activity list."""
     lines = [
         "| Date | Action | Player | Team |",
         "|------|--------|--------|------|",
     ]
+    if title_suffix:
+        lines = [f"_{title_suffix}_", ""] + lines
     for act in activities:
+        date_display = _fmt_activity_date(act.date)
         for action in act.actions:
             team_obj = action[0] if len(action) > 0 else None
             team_name = team_obj.team_name if team_obj and hasattr(team_obj, 'team_name') else str(team_obj or "—")
             action_type = action[1] if len(action) > 1 else "UNKNOWN"
             player_name = action[2] if len(action) > 2 else ""
-            lines.append(f"| {act.date} | {action_type} | {player_name} | {team_name} |")
+            lines.append(f"| {date_display} | {action_type} | {player_name} | {team_name} |")
     return "\n".join(lines)
+
+
+def _fmt_activity_date(raw) -> str:
+    """Format an activity timestamp (epoch ms) as a readable date."""
+    if isinstance(raw, (int, float)) and raw > 10_000_000_000:
+        from datetime import datetime
+        try:
+            return datetime.fromtimestamp(raw / 1000).strftime("%Y-%m-%d")
+        except (ValueError, OSError):
+            return str(raw)
+    return str(raw)
 
 
 def fmt_player_detail(player):
@@ -972,6 +986,165 @@ def fmt_pro_schedule(data: dict, current_scoring_period: int = 0, days: int = 7)
     for abbrev, game_count, off_days in sorted(team_data, key=lambda x: -x[1]):
         off_str = str(off_days) if off_days > 0 else "—"
         lines.append(f"| {abbrev} | {game_count} | {off_str} |")
+
+    return "\n".join(lines)
+
+
+def fmt_probable_pitchers(scoreboard_data: dict, date: str) -> str:
+    """Format probable starting pitchers for all games on a date.
+
+    Reads events[].competitions[0].competitors[] and reads 'probables'
+    (or falls back to probable-pitcher headlines on older payloads).
+    """
+    events = scoreboard_data.get("events", [])
+    if not events:
+        return f"No MLB games scheduled for {date}."
+
+    lines = [
+        f"## Probable Pitchers — {date[:4]}-{date[4:6]}-{date[6:]}",
+        "",
+        "| Game | Time (ET) | Away Starter | Throws | Home Starter | Throws |",
+        "|------|-----------|--------------|--------|--------------|--------|",
+    ]
+
+    for event in events:
+        comps = event.get("competitions", [])
+        if not comps:
+            continue
+        comp = comps[0]
+        competitors = comp.get("competitors", [])
+
+        away_abbrev = "?"
+        home_abbrev = "?"
+        away_pitcher = {"name": "TBD", "throws": "—"}
+        home_pitcher = {"name": "TBD", "throws": "—"}
+
+        for c in competitors:
+            team = c.get("team", {})
+            abbrev = team.get("abbreviation", "?")
+            home_away = c.get("homeAway", "")
+            pitcher = _extract_probable(c)
+            if home_away == "home":
+                home_abbrev = abbrev
+                home_pitcher = pitcher
+            else:
+                away_abbrev = abbrev
+                away_pitcher = pitcher
+
+        # Game time in ET
+        status = event.get("status", {}).get("type", {})
+        date_str = event.get("date", "")
+        game_time = _format_et_time(date_str) if date_str else "—"
+        if status.get("state") == "in":
+            game_time = status.get("shortDetail", game_time)
+        elif status.get("completed"):
+            game_time = "Final"
+
+        matchup = f"{away_abbrev} @ {home_abbrev}"
+        lines.append(
+            f"| {matchup} | {game_time} | {away_pitcher['name']} | {away_pitcher['throws']} "
+            f"| {home_pitcher['name']} | {home_pitcher['throws']} |"
+        )
+
+    return "\n".join(lines)
+
+
+def _extract_probable(competitor: dict) -> dict:
+    """Pull probable pitcher (name + throws) from a competitor record."""
+    probables = competitor.get("probables") or []
+    if probables:
+        prob = probables[0]
+        athlete = prob.get("athlete") or {}
+        name = athlete.get("displayName") or athlete.get("fullName") or prob.get("displayName") or "TBD"
+        throws = _extract_throws(athlete)
+        return {"name": name, "throws": throws}
+
+    # Fallback: some payloads stash the probable under leaders/roster
+    leaders = competitor.get("leaders") or []
+    for leader in leaders:
+        if leader.get("name") == "probableStartingPitcher":
+            athletes = leader.get("leaders", [])
+            if athletes:
+                a = athletes[0].get("athlete", {})
+                return {
+                    "name": a.get("displayName", "TBD"),
+                    "throws": _extract_throws(a),
+                }
+    return {"name": "TBD", "throws": "—"}
+
+
+def _extract_throws(athlete: dict) -> str:
+    """Extract L/R from an athlete record's hand info."""
+    hand = athlete.get("hand") or athlete.get("throws") or {}
+    if isinstance(hand, dict):
+        val = hand.get("abbreviation") or hand.get("displayValue") or hand.get("type", "")
+        if val:
+            val = str(val).upper()
+            if "L" in val:
+                return "L"
+            if "R" in val:
+                return "R"
+    elif isinstance(hand, str) and hand:
+        return hand[0].upper()
+    return "—"
+
+
+def _format_et_time(iso_date: str) -> str:
+    """Convert an ISO UTC datetime to 'h:MM AM/PM ET' display."""
+    from datetime import datetime, timezone, timedelta
+    try:
+        dt = datetime.fromisoformat(iso_date.replace("Z", "+00:00"))
+    except ValueError:
+        return iso_date
+    et = dt.astimezone(timezone(timedelta(hours=-5)))  # EST baseline; good enough for a display hint
+    return et.strftime("%-I:%M %p ET")
+
+
+def fmt_weekly_moves(team_name: str, matchup_period: int, moves_used: int, move_limit: int | None) -> str:
+    """Format a weekly-moves summary for a team."""
+    if move_limit is None or move_limit <= 0:
+        remaining = "—"
+        limit_str = "unlimited"
+    else:
+        remaining = str(max(0, move_limit - moves_used))
+        limit_str = str(move_limit)
+    return (
+        f"## Weekly Moves — {team_name}\n\n"
+        f"- **Matchup period:** {matchup_period}\n"
+        f"- **Moves used:** {moves_used}\n"
+        f"- **Move limit:** {limit_str}\n"
+        f"- **Moves remaining:** {remaining}\n"
+    )
+
+
+def fmt_sp_schedule(overview_data: dict, player_name: str) -> str:
+    """Format a starting pitcher's next scheduled start from player overview data."""
+    next_game = overview_data.get("nextGame", {}) or {}
+    event = next_game.get("event", {}) or {}
+
+    lines = [f"## Next Start — {player_name}", ""]
+
+    game_name = event.get("name") or event.get("shortName") or ""
+    game_date = (event.get("date") or "")[:10]
+    if not game_name and not game_date:
+        lines.append("No scheduled start found — pitcher may not be active or start is TBD.")
+        return "\n".join(lines)
+
+    if game_date:
+        lines.append(f"- **Date:** {game_date}")
+    if game_name:
+        lines.append(f"- **Matchup:** {game_name}")
+
+    week = next_game.get("week") or {}
+    if isinstance(week, dict) and week.get("text"):
+        lines.append(f"- **Week:** {week['text']}")
+
+    # rotowire blurb often has the latest start confirmation
+    rotowire = overview_data.get("rotowire") or {}
+    blurb = rotowire.get("blurb")
+    if blurb:
+        lines.append("")
+        lines.append(f"**Status:** {blurb}")
 
     return "\n".join(lines)
 
