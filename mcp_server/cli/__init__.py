@@ -11,6 +11,7 @@ from mcp_server.config import (
     resolve_team,
 )
 from mcp_server import formatters
+from mcp_server import write_ops
 from mcp_server.cli.auth import app as auth_app
 from mcp_server.cli.build_plugin import app as build_plugin_app
 
@@ -631,6 +632,82 @@ def chat() -> None:
     except Exception as e:
         console.print(f"Failed to fetch league chat: {e}")
         raise typer.Exit(1)
+
+
+@app.command(name="verify-auth")
+def verify_auth() -> None:
+    """Verify cookie auth health without performing any write."""
+    league = get_league()
+    console.print(write_ops.verify_auth(league))
+
+
+@app.command(name="set-lineup")
+def set_lineup(
+    assignments_json: str = typer.Argument(..., help="JSON list of lineup assignment items"),
+) -> None:
+    """Safely stage or execute lineup slot changes for my team."""
+    import json
+
+    league = get_league()
+    team = get_my_team(league)
+    if not team:
+        console.print(get_my_team_error(league))
+        raise typer.Exit(1)
+    assignments = json.loads(assignments_json)
+    console.print(write_ops.set_lineup(league, team, assignments))
+
+
+@app.command(name="add-drop")
+def add_drop(
+    add_player: str = typer.Option(..., "--add", help="Player to add"),
+    drop_player: str = typer.Option(..., "--drop", help="Player to drop"),
+    remaining_moves: int = typer.Option(0, "--remaining-moves", help="Remaining weekly moves"),
+) -> None:
+    """Safely stage or execute a free-agent add/drop for my team."""
+    league = get_league()
+    team = get_my_team(league)
+    if not team:
+        console.print(get_my_team_error(league))
+        raise typer.Exit(1)
+    add_obj, add_error = _resolve_player(league, add_player)
+    if add_error:
+        console.print(add_error)
+        raise typer.Exit(1)
+    drop_obj, drop_error = _resolve_player(league, drop_player)
+    if drop_error:
+        console.print(drop_error)
+        raise typer.Exit(1)
+    console.print(write_ops.add_drop(league, team, add_obj, drop_obj, remaining_moves))
+
+
+@app.command(name="propose-trade")
+def propose_trade(
+    trade_partner_team_id: int = typer.Option(..., "--partner", help="Trade partner team id"),
+    give_player_ids: str = typer.Option(..., "--give", help="Comma-separated player ids to give"),
+    receive_player_ids: str = typer.Option(..., "--receive", help="Comma-separated player ids to receive"),
+) -> None:
+    """Return an approval-required trade proposal object."""
+    league = get_league()
+    team = get_my_team(league)
+    if not team:
+        console.print(get_my_team_error(league))
+        raise typer.Exit(1)
+    give_ids = [int(value.strip()) for value in give_player_ids.split(',') if value.strip()]
+    receive_ids = [int(value.strip()) for value in receive_player_ids.split(',') if value.strip()]
+    console.print(write_ops.propose_trade(league, team, trade_partner_team_id, give_ids, receive_ids))
+
+
+@app.command(name="accept-trade")
+def accept_trade(
+    proposal_id: int = typer.Option(..., "--proposal-id", help="Trade proposal id"),
+) -> None:
+    """Return an approval-required trade acceptance object."""
+    league = get_league()
+    team = get_my_team(league)
+    if not team:
+        console.print(get_my_team_error(league))
+        raise typer.Exit(1)
+    console.print(write_ops.accept_trade(league, team, proposal_id))
 
 
 def main() -> None:

@@ -8,6 +8,7 @@ from mcp.server.fastmcp import FastMCP
 from .config import get_league, get_my_team, get_my_team_error, resolve_team, describe_available_teams
 from . import formatters
 from . import espn_public_api
+from . import write_ops
 
 logger = logging.getLogger(__name__)
 
@@ -108,6 +109,54 @@ def _resolve_player(league, name: str):
 
 def register_tools(mcp: FastMCP):
     """Register all tools on the MCP server."""
+
+    @mcp.tool()
+    def verify_auth() -> dict:
+        """Verify cookie auth health without performing any write."""
+        league = get_league()
+        return write_ops.verify_auth(league)
+
+    @mcp.tool()
+    def set_lineup(assignments: list[dict]) -> dict:
+        """Safely stage or execute lineup slot changes for my team."""
+        league = get_league()
+        team = get_my_team(league)
+        if not team:
+            return {"error": get_my_team_error(league)}
+        return write_ops.set_lineup(league, team, assignments)
+
+    @mcp.tool()
+    def add_drop(add_player: str, drop_player: str, remaining_moves: int = 0) -> dict:
+        """Safely stage or execute a free-agent add/drop for my team."""
+        league = get_league()
+        team = get_my_team(league)
+        if not team:
+            return {"error": get_my_team_error(league)}
+        add_obj, add_error = _resolve_player(league, add_player)
+        if add_error:
+            return {"error": add_error}
+        drop_obj, drop_error = _resolve_player(league, drop_player)
+        if drop_error:
+            return {"error": drop_error}
+        return write_ops.add_drop(league, team, add_obj, drop_obj, remaining_moves)
+
+    @mcp.tool()
+    def propose_trade(trade_partner_team_id: int, give_player_ids: list[int], receive_player_ids: list[int]) -> dict:
+        """Return an approval-required trade proposal object."""
+        league = get_league()
+        team = get_my_team(league)
+        if not team:
+            return {"error": get_my_team_error(league)}
+        return write_ops.propose_trade(league, team, trade_partner_team_id, give_player_ids, receive_player_ids)
+
+    @mcp.tool()
+    def accept_trade(proposal_id: int) -> dict:
+        """Return an approval-required trade acceptance object."""
+        league = get_league()
+        team = get_my_team(league)
+        if not team:
+            return {"error": get_my_team_error(league)}
+        return write_ops.accept_trade(league, team, proposal_id)
 
     @mcp.tool()
     def get_my_roster() -> str:

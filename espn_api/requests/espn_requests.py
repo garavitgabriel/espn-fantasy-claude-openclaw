@@ -4,6 +4,8 @@ from .constant import FANTASY_BASE_ENDPOINT, NEWS_BASE_ENDPOINT, FANTASY_SPORTS
 from ..utils.logger import Logger
 from typing import List
 
+WRITE_BASE_ENDPOINT = 'https://lm-api-writes.fantasy.espn.com/apis/v3/games/'
+
 
 class ESPNAccessDenied(Exception):
     pass
@@ -34,6 +36,8 @@ class EspnFantasyRequests(object):
             self.LEAGUE_ENDPOINT += "/leagueHistory/" + str(league_id) + "?seasonId=" + str(year)
         else:
             self.LEAGUE_ENDPOINT += "/seasons/" + str(year) + "/segments/0/leagues/" + str(league_id)
+
+        self.WRITE_ENDPOINT = WRITE_BASE_ENDPOINT + FANTASY_SPORTS[sport] + '/seasons/' + str(self.year) + '/segments/0/leagues/' + str(self.league_id)
 
     def checkRequestStatus(self, status: int, extend: str = "", params: dict = None, headers: dict = None) -> dict:
         '''Handles ESPN API response status codes and endpoint format switching'''
@@ -102,6 +106,34 @@ class EspnFantasyRequests(object):
         if self.logger:
             self.logger.log_request(endpoint=endpoint, params=params, headers=headers, response=r.json())
         return r.json()
+
+    def write_post(self, payload: dict, headers: dict = None, extend: str = '/transactions/'):
+        endpoint = self.WRITE_ENDPOINT + extend
+        merged_headers = {
+            'Content-Type': 'application/json',
+            'x-fantasy-source': 'kona',
+        }
+        if headers:
+            merged_headers.update(headers)
+
+        r = requests.post(endpoint, json=payload, headers=merged_headers, cookies=self.cookies)
+        self.checkRequestStatus(r.status_code, extend=extend, headers=merged_headers)
+
+        response = r.json() if r.content else {'status': 'ok'}
+        if self.logger:
+            self.logger.log_request(endpoint=endpoint, params=None, headers=merged_headers, response=response)
+        return response
+
+    def verify_auth(self):
+        params = {'view': 'mSettings'}
+        data = self.league_get(params=params)
+        return {
+            'ok': True,
+            'league_id': self.league_id,
+            'year': self.year,
+            'has_cookies': bool(self.cookies and self.cookies.get('espn_s2') and self.cookies.get('SWID')),
+            'league_name': data.get('settings', {}).get('name') if isinstance(data, dict) else None,
+        }
 
     def get_league(self):
         '''Gets all of the leagues initial data (teams, roster, matchups, settings)'''

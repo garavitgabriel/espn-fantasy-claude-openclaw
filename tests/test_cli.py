@@ -113,3 +113,18 @@ class TestCLIHelp(TestCase):
 
     def test_build_plugin_help(self):
         self._assert_help(["build-plugin"])
+
+    def test_verify_auth_help(self):
+        self._assert_help(["verify-auth"])
+
+    def test_set_lineup_help(self):
+        self._assert_help(["set-lineup"])
+
+    def test_add_drop_help(self):
+        self._assert_help(["add-drop"])
+
+    def test_propose_trade_help(self):
+        self._assert_help(["propose-trade"])
+
+    def test_accept_trade_help(self):
+        self._assert_help(["accept-trade"])

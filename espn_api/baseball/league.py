@@ -206,3 +206,56 @@ class League(BaseLeague):
                 elif matchup.away_team == team.team_id:
                     matchup.away_team = team
         return box_data
+
+    def set_lineup(self, team_id: int, scoring_period_id: int, assignments: List[dict]):
+        payload = {
+            'isLeagueManager': False,
+            'teamId': team_id,
+            'type': 'ROSTER',
+            'scoringPeriodId': scoring_period_id,
+            'executionType': 'EXECUTE',
+            'items': assignments,
+        }
+        return self.espn_request.write_post(payload)
+
+    def add_drop_player(self, team_id: int, add_player_id: int, drop_player_id: int, acquisition_type: str = 'FREEAGENT'):
+        payload = {
+            'isLeagueManager': False,
+            'teamId': team_id,
+            'type': acquisition_type,
+            'executionType': 'EXECUTE',
+            'items': [
+                {'type': 'ADD', 'playerId': add_player_id},
+                {'type': 'DROP', 'playerId': drop_player_id},
+            ],
+        }
+        return self.espn_request.write_post(payload)
+
+    def propose_trade(self, team_id: int, trade_partner_team_id: int, give_player_ids: List[int], receive_player_ids: List[int]):
+        payload = {
+            'isLeagueManager': False,
+            'teamId': team_id,
+            'type': 'TRADE_PROPOSAL',
+            'executionType': 'EXECUTE',
+            'tradePartnerTeamId': trade_partner_team_id,
+            'items': [
+                {'type': 'TRADE_GIVE', 'playerId': player_id} for player_id in give_player_ids
+            ] + [
+                {'type': 'TRADE_RECEIVE', 'playerId': player_id} for player_id in receive_player_ids
+            ],
+        }
+        return self.espn_request.write_post(payload)
+
+    def accept_trade(self, team_id: int, proposal_id: int):
+        payload = {
+            'isLeagueManager': False,
+            'teamId': team_id,
+            'type': 'TRADE_ACCEPT',
+            'executionType': 'EXECUTE',
+            'proposalId': proposal_id,
+            'items': [],
+        }
+        return self.espn_request.write_post(payload)
+
+    def verify_auth(self):
+        return self.espn_request.verify_auth()
