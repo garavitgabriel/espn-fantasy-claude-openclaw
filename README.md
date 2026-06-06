@@ -270,6 +270,25 @@ uv run espn --help
 </details>
 
 <details>
+<summary><strong>Write tools (mutate the real league — gated)</strong></summary>
+
+> ⚠️ These change your real ESPN league. They are **disabled by default** — set
+> `ESPN_WRITE_ENABLED=true` to allow them. Each is two-step: call without a token to get
+> a **preview + confirm token**, then re-call echoing the token to execute. See
+> [`docs/WRITES.md`](docs/WRITES.md).
+
+| Tool | CLI | What it does |
+|---|---|---|
+| `add_player` | `add <player> [--drop X]` | Add a free agent (optionally dropping one in the same move) |
+| `drop_player` | `drop <player>` | Drop a player from your roster |
+| `waiver_claim` | `waiver <player> [--drop X]` | Submit a waiver claim (lands pending) |
+| `set_lineup` | `lineup <player> <slot> [--swap-with X]` | Move a player to a lineup slot / swap two |
+| `propose_trade` | `propose-trade --to T --give "A,B" --receive "C"` | Propose a trade to another team |
+| `cancel_trade` | `cancel-trade <transaction_id>` | Withdraw a pending trade proposal |
+
+</details>
+
+<details>
 <summary>Memory MCP — cross-session persistence (14 tools)</summary>
 
 | Tool | Description |
@@ -325,6 +344,7 @@ In the Railway dashboard, add these variables to your service:
 | `ESPN_LEAGUE_ID` | Your league ID (default: `612122596`) |
 | `ESPN_YEAR` | Season year (default: `2026`) |
 | `ESPN_TEAM_NAME` | Partial match for your team name |
+| `ESPN_WRITE_ENABLED` | Allow mutating tools (add/drop/waiver/lineup/trade). Default `false` (read-only). |
 
 > `MCP_TRANSPORT=sse` is already baked into the Dockerfile — no need to set it manually.
 

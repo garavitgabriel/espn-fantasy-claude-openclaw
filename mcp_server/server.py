@@ -1,9 +1,10 @@
 """ESPN Fantasy Baseball MCP Server.
 
 Supports stdio (local), SSE, and streamable-http transports.
-Exposes 16 tools for league management: rosters, standings, matchups,
-free agents, player comparison, trade analysis, scoring categories,
-roster slot config, draft board tracking, and roster needs.
+Exposes read tools for league management (rosters, standings, matchups, free
+agents, player comparison, trade analysis, scoring categories, draft board,
+roster needs) plus gated write tools (add/drop, waiver, lineup, propose/cancel
+trade) that mutate the real league only when explicitly enabled.
 """
 
 import os
@@ -21,7 +22,14 @@ _mcp_kwargs: dict = dict(
         "Use these to scout opponents, find free agents, analyze matchups, "
         "recommend roster moves, and assist during draft day. "
         "Start with get_scoring_categories and get_roster_slots to understand "
-        "league settings before making recommendations."
+        "league settings before making recommendations. "
+        "Write tools (add_player, drop_player, waiver_claim, set_lineup, "
+        "propose_trade, cancel_trade) mutate the REAL league and are disabled "
+        "unless ESPN_WRITE_ENABLED=true. They are two-step: call without a "
+        "confirm_token to get a preview + token, show the human the exact move, "
+        "get explicit approval, then re-call with that token. Never invent or "
+        "reuse a token, and never preview and execute in the same turn without "
+        "explicit human approval."
     ),
 )
 

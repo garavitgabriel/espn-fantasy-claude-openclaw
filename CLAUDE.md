@@ -111,6 +111,7 @@ Set via `espn auth login` (browser), `espn auth token` (manual), or `.env` (giti
 | `ESPN_LEAGUE_ID` | League ID (default: 612122596) |
 | `ESPN_YEAR` | Season year (default: 2026) |
 | `ESPN_TEAM_NAME` | Partial match for your team name (default: Gabriel) |
+| `ESPN_WRITE_ENABLED` | Enable mutating tools (add/drop/waiver/lineup/trade). Default `false` (read-only). Set `true`/`1`/`yes`/`on` to allow writes. |
 
 ## MCP Resources
 
@@ -151,6 +152,38 @@ Set via `espn auth login` (browser), `espn auth token` (manual), or `.env` (giti
 | `get_weekly_moves` | `weekly-moves` | `fmt_weekly_moves` |
 | `get_batter_vs_team` (accepts `opponent_team`) | `vs-team --opponent` | `fmt_batter_vs_team` |
 | `get_recent_activity` (accepts `team_name`, `scoring_period`) | `activity --team --period` | `fmt_activity` |
+
+### Write Tools (gated by `ESPN_WRITE_ENABLED`)
+
+These mutate the **real** league. Each is two-step: call without `confirm_token` for a
+preview + token, then re-call echoing the token to execute. See "Writes & Safety" below.
+
+| MCP Tool | CLI Command | Library method (`espn_api/baseball/league.py`) | Formatter |
+|----------|-------------|------------------------------------------------|-----------|
+| `add_player` | `add <player> [--drop X] [--confirm-token T]` | `add_drop_player` | `fmt_txn_preview` / `fmt_txn_result` |
+| `drop_player` | `drop <player> [--confirm-token T]` | `add_drop_player` (drop-only) | `fmt_txn_preview` / `fmt_txn_result` |
+| `waiver_claim` | `waiver <player> [--drop X] [--confirm-token T]` | `waiver_claim` | `fmt_txn_preview` / `fmt_txn_result` |
+| `set_lineup` | `lineup <player> <to_slot> [--swap-with X] [--confirm-token T]` | `set_lineup_moves` | `fmt_txn_preview` / `fmt_txn_result` |
+| `propose_trade` | `propose-trade --to T --give "A,B" --receive "C" [--comment ...] [--confirm-token T]` | `propose_trade` | `fmt_txn_preview` / `fmt_txn_result` |
+| `cancel_trade` | `cancel-trade <transaction_id> [--confirm-token T]` | `cancel_trade` | `fmt_txn_preview` / `fmt_txn_result` |
+
+Write tools live in `mcp_server/writes/{roster,lineup,trades}.py` and share the safety
+flow in `mcp_server/writes/_base.py`. The library methods accept `dry_run=True` (return
+the exact payload without POSTing) so the preview is byte-for-byte what executes.
+
+## Writes & Safety
+
+Every mutation is a single `POST` to ESPN's `lm-api-writes` `/transactions/` endpoint
+(see `docs/writes/00-BRIEF.md` for the verified payloads and `docs/WRITES.md` for the
+owner live-verification procedure). Two layers protect the live league:
+
+1. **Env kill-switch** — writes are refused unless `ESPN_WRITE_ENABLED=true`. With it
+   off, the tools still appear (and explain how to enable) but never execute.
+2. **Payload-bound confirm token** — the first call returns a preview rendering the
+   literal JSON body plus an 8-hex token derived from that body. Execution happens only
+   when the caller echoes the exact token. If anything changes between preview and
+   execute (player resolves differently, scoring period rolls over), the token no longer
+   matches and a fresh preview is forced. Cache is invalidated after a successful write.
 
 ## Adding a New Tool
 
