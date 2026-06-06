@@ -1,6 +1,12 @@
 import requests
 import json
-from .constant import FANTASY_BASE_ENDPOINT, NEWS_BASE_ENDPOINT, FANTASY_SPORTS
+from .constant import (
+    FANTASY_BASE_ENDPOINT,
+    NEWS_BASE_ENDPOINT,
+    FANTASY_SPORTS,
+    FANTASY_READ_HOST,
+    FANTASY_WRITE_HOST,
+)
 from ..utils.logger import Logger
 from typing import List
 
@@ -14,6 +20,11 @@ class ESPNInvalidLeague(Exception):
 
 
 class ESPNUnknownError(Exception):
+    pass
+
+
+class ESPNRosterFull(Exception):
+    '''Raised when ESPN rejects a write with HTTP 409 (roster full or otherwise illegal move).'''
     pass
 
 
@@ -34,6 +45,10 @@ class EspnFantasyRequests(object):
             self.LEAGUE_ENDPOINT += "/leagueHistory/" + str(league_id) + "?seasonId=" + str(year)
         else:
             self.LEAGUE_ENDPOINT += "/seasons/" + str(year) + "/segments/0/leagues/" + str(league_id)
+
+        # Writes hit the same path on a different host. Derive from the read endpoint so the
+        # year-branch path logic above stays the single source of truth.
+        self.LEAGUE_WRITE_ENDPOINT = self.LEAGUE_ENDPOINT.replace(FANTASY_READ_HOST, FANTASY_WRITE_HOST)
 
     def checkRequestStatus(self, status: int, extend: str = "", params: dict = None, headers: dict = None) -> dict:
         '''Handles ESPN API response status codes and endpoint format switching'''
@@ -101,6 +116,57 @@ class EspnFantasyRequests(object):
 
         if self.logger:
             self.logger.log_request(endpoint=endpoint, params=params, headers=headers, response=r.json())
+        return r.json()
+
+    # --- Write support -------------------------------------------------------
+    # Deliberately separate from the read path. checkWriteStatus does NOT retry on 401
+    # (retrying a mutation is dangerous) and surfaces 409 (roster full / illegal move)
+    # as its own exception so callers can react.
+
+    WRITE_HEADERS = {
+        'content-type': 'application/json',
+        'x-fantasy-platform': 'espn-fantasy-web',
+        'x-fantasy-source': 'kona',
+        'origin': 'https://fantasy.espn.com',
+        'referer': 'https://fantasy.espn.com/',
+    }
+
+    def checkWriteStatus(self, status: int, response=None) -> None:
+        '''Validate a write response status. Raises on failure; returns None on success.'''
+        if status in (200, 201):
+            return None
+
+        detail = ''
+        if response is not None:
+            try:
+                detail = response.text[:300]
+            except Exception:
+                detail = ''
+
+        if status == 401:
+            raise ESPNAccessDenied(
+                "Write rejected (401). espn_s2/SWID may be expired or lack write access."
+            )
+        if status == 409:
+            raise ESPNRosterFull(
+                f"Transaction conflict (409): roster may be full or the move is illegal. {detail}".strip()
+            )
+        if status == 404:
+            raise ESPNInvalidLeague(f"League {self.league_id} does not exist")
+        raise ESPNUnknownError(f"ESPN write returned HTTP {status}. {detail}".strip())
+
+    def league_post(self, payload: dict, extend: str = '/transactions/', headers: dict = None):
+        '''POST a transaction to the league write endpoint. Returns parsed JSON on success.'''
+        endpoint = self.LEAGUE_WRITE_ENDPOINT + extend
+        merged_headers = dict(self.WRITE_HEADERS)
+        if headers:
+            merged_headers.update(headers)
+
+        r = requests.post(endpoint, json=payload, headers=merged_headers, cookies=self.cookies)
+        self.checkWriteStatus(r.status_code, response=r)
+
+        if self.logger:
+            self.logger.log_request(endpoint=endpoint, params=None, headers=merged_headers, response=r.json())
         return r.json()
 
     def get_league(self):

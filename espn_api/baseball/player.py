@@ -52,6 +52,7 @@ class Player(object):
         self.name = player.get('fullName', json_parsing(data, 'fullName'))
         self.playerId = player.get('id', json_parsing(data, 'id'))
         self.position = _display_position(player.get('defaultPositionId'), player.get('eligibleSlots', []))
+        self.lineupSlotId = data.get('lineupSlotId')  # raw int slot; needed to build lineup writes
         self.lineupSlot = POSITION_MAP.get(data.get('lineupSlotId'), '')
         self.eligibleSlots = _map_eligible_slots(player.get('eligibleSlots', []))  # if position isn't in position map, just use the position id number
         self.acquisitionType = json_parsing(data, 'acquisitionType')

@@ -206,3 +206,91 @@ class League(BaseLeague):
                 elif matchup.away_team == team.team_id:
                     matchup.away_team = team
         return box_data
+
+    # --- Write / transaction support -----------------------------------------
+    # Every mutation is a POST to the single /transactions/ endpoint; only the body
+    # changes (see docs/writes/00-BRIEF.md and the WRITE_API_REFERENCE spec).
+    # Each method accepts dry_run: when True it returns the exact payload dict without
+    # POSTing, so callers can preview/confirm the identical body that will execute.
+
+    def _build_transaction(self, team_id: int, txn_type: str, items: list,
+                           execution_type: str = 'EXECUTE', **extra) -> dict:
+        '''Assemble the shared transaction envelope. extra carries op-specific keys
+        (bidAmount, expirationDate, comment, relatedTransactionId).'''
+        cookies = self.espn_request.cookies or {}
+        body = {
+            'isLeagueManager': False,
+            'teamId': team_id,
+            'type': txn_type,
+            'memberId': cookies.get('SWID'),
+            'scoringPeriodId': self.scoringPeriodId,
+            'executionType': execution_type,
+            'items': items,
+        }
+        body.update(extra)
+        return body
+
+    def _post_transaction(self, payload: dict) -> dict:
+        return self.espn_request.league_post(payload)
+
+    def set_lineup_moves(self, team_id: int, moves: list, dry_run: bool = False) -> dict:
+        '''moves: list of (playerId, fromLineupSlotId, toLineupSlotId). A swap is two moves.'''
+        items = [
+            {
+                'playerId': player_id,
+                'type': 'LINEUP',
+                'fromLineupSlotId': from_slot,
+                'toLineupSlotId': to_slot,
+            }
+            for (player_id, from_slot, to_slot) in moves
+        ]
+        payload = self._build_transaction(team_id, 'ROSTER', items)
+        return payload if dry_run else self._post_transaction(payload)
+
+    def add_drop_player(self, team_id: int, add_player_id: int = None,
+                        drop_player_id: int = None, dry_run: bool = False) -> dict:
+        '''Free-agent ADD and/or DROP in one transaction. ADD uses toTeamId; DROP uses fromTeamId.'''
+        items = []
+        if add_player_id is not None:
+            items.append({'playerId': add_player_id, 'type': 'ADD', 'toTeamId': team_id})
+        if drop_player_id is not None:
+            items.append({'playerId': drop_player_id, 'type': 'DROP', 'fromTeamId': team_id})
+        payload = self._build_transaction(team_id, 'FREEAGENT', items)
+        return payload if dry_run else self._post_transaction(payload)
+
+    def waiver_claim(self, team_id: int, add_player_id: int, drop_player_id: int = None,
+                     bid_amount=None, dry_run: bool = False) -> dict:
+        '''Waiver claim (lands PENDING). Same item shape as free agents; bid_amount=None for no-FAAB.'''
+        items = [{'playerId': add_player_id, 'type': 'ADD', 'toTeamId': team_id}]
+        if drop_player_id is not None:
+            items.append({'playerId': drop_player_id, 'type': 'DROP', 'fromTeamId': team_id})
+        payload = self._build_transaction(team_id, 'WAIVER', items, bidAmount=bid_amount)
+        return payload if dry_run else self._post_transaction(payload)
+
+    def propose_trade(self, from_team_id: int, to_team_id: int, send_player_ids: list,
+                      receive_player_ids: list, comment: str = '',
+                      expiration_date: str = None, dry_run: bool = False) -> dict:
+        '''Propose a trade (lands PENDING, returns a proposal id). send = players leaving
+        from_team; receive = players coming from to_team.'''
+        items = []
+        for player_id in (send_player_ids or []):
+            items.append({'playerId': player_id, 'type': 'TRADE',
+                          'fromTeamId': from_team_id, 'toTeamId': to_team_id})
+        for player_id in (receive_player_ids or []):
+            items.append({'playerId': player_id, 'type': 'TRADE',
+                          'fromTeamId': to_team_id, 'toTeamId': from_team_id})
+        if expiration_date is None:
+            expiration_date = (
+                datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=2)
+            ).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+        payload = self._build_transaction(from_team_id, 'TRADE_PROPOSAL', items,
+                                          expirationDate=expiration_date, comment=comment)
+        return payload if dry_run else self._post_transaction(payload)
+
+    def cancel_trade(self, team_id: int, related_transaction_id: str,
+                     dry_run: bool = False) -> dict:
+        '''Withdraw a pending trade proposal you created.'''
+        payload = self._build_transaction(team_id, 'TRADE_PROPOSAL', [],
+                                          execution_type='CANCEL',
+                                          relatedTransactionId=related_transaction_id)
+        return payload if dry_run else self._post_transaction(payload)

@@ -109,6 +109,10 @@ def _resolve_player(league, name: str):
 def register_tools(mcp: FastMCP):
     """Register all tools on the MCP server."""
 
+    # Write/mutation tools (gated by ESPN_WRITE_ENABLED + confirm token).
+    from .writes import register_write_tools
+    register_write_tools(mcp)
+
     @mcp.tool()
     def get_my_roster() -> str:
         """Get my fantasy baseball team's roster with stats, positions, and injury status."""

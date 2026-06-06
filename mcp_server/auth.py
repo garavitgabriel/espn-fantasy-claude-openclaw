@@ -17,6 +17,7 @@ class EspnConfig(BaseModel):
     year: int = 2026
     team_id: str | None = None
     team_name: str = "Gabriel"
+    write_enabled: bool = False
 
 
 class ConfigManager:
@@ -49,6 +50,10 @@ class ConfigManager:
             config.team_id = os.environ["ESPN_TEAM_ID"]
         if os.environ.get("ESPN_TEAM_NAME"):
             config.team_name = os.environ["ESPN_TEAM_NAME"]
+        if os.environ.get("ESPN_WRITE_ENABLED"):
+            config.write_enabled = os.environ["ESPN_WRITE_ENABLED"].strip().lower() in (
+                "1", "true", "yes", "on",
+            )
 
         return config
 

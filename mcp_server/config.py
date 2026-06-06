@@ -5,6 +5,8 @@ token``) with environment-variable overrides, creates a cached League
 singleton, and resolves the user's team from ESPN_TEAM_ID / ESPN_TEAM_NAME.
 """
 
+import hashlib
+import json
 import os
 import re
 import sys
@@ -34,6 +36,7 @@ ESPN_LEAGUE_ID = _config.league_id
 ESPN_YEAR = _config.year
 ESPN_TEAM_ID = (_config.team_id or "").strip()
 ESPN_TEAM_NAME = _config.team_name
+ESPN_WRITE_ENABLED = bool(_config.write_enabled)
 
 _league_instance = None
 
@@ -63,6 +66,48 @@ def get_league() -> League:
             swid=ESPN_SWID,
         )
     return _league_instance
+
+
+def invalidate_league() -> None:
+    """Drop the cached League so the next get_league() refetches.
+
+    Call after a successful write so subsequent reads reflect the mutation.
+    """
+    global _league_instance
+    _league_instance = None
+
+
+# --- Write safety primitives -------------------------------------------------
+
+def writes_enabled() -> bool:
+    """True only when ESPN_WRITE_ENABLED is set truthy (default off = read-only)."""
+    return bool(ESPN_WRITE_ENABLED)
+
+
+def require_writes_enabled() -> Optional[str]:
+    """Return the disabled message when writes are off, else None.
+
+    Write tools/commands call this first and short-circuit on a non-None result.
+    """
+    if writes_enabled():
+        return None
+    return (
+        "⛔ Writes are DISABLED — this MCP is in read-only mode to protect your live league.\n"
+        "To enable mutations, set ESPN_WRITE_ENABLED=true in the environment and restart "
+        "the server/CLI. Then use each write tool's preview → confirm-token flow."
+    )
+
+
+def txn_token(payload: dict) -> str:
+    """Short deterministic token bound to the exact transaction payload.
+
+    Used for the two-step preview/confirm gate: the preview returns this token and
+    execution only proceeds when the caller echoes it back. If anything in the payload
+    changes (player resolved differently, scoring period rolled over), the token
+    changes and execution is refused until a fresh preview is approved.
+    """
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:8]
 
 
 def _normalize_team_text(value: object) -> str:

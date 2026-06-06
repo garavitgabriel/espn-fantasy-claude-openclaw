@@ -633,5 +633,10 @@ def chat() -> None:
         raise typer.Exit(1)
 
 
+# Write/mutation commands (gated by ESPN_WRITE_ENABLED + confirm token).
+from mcp_server.writes import register_write_commands
+register_write_commands(app)
+
+
 def main() -> None:
     app()
