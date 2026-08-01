@@ -1,0 +1,13 @@
+{
+  "name": "garavitgabriel",
+  "owner": {
+    "name": "Gabriel Garavit"
+  },
+  "plugins": [
+    {
+      "name": "espn-fantasy",
+      "source": "./",
+      "description": "AI-powered ESPN Fantasy Baseball manager for H2H Categories leagues — matchup scouting, free agents, trade analysis, auction drafts, and cross-session memory. 44 MCP tools + 8 skills."
+    }
+  ]
+}
