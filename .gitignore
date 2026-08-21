@@ -15,3 +15,10 @@ dist
 env
 coverage*
 *.db
+
+# macOS Finder metadata
+.DS_Store
+
+# Claude Code local/personal state
+.claude/settings.local.json
+.claude/worktrees/
